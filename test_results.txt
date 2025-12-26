@@ -1,0 +1,75 @@
+D:\travel_agent\agents\tools\travel.py:17: RuntimeWarning: This package (`duckduckgo_search`) has been renamed to `ddgs`! Use `pip install ddgs` instead.
+  with DDGS() as ddgs:
+D:\travel_agent\agents\tools\travel.py:98: RuntimeWarning: This package (`duckduckgo_search`) has been renamed to `ddgs`! Use `pip install ddgs` instead.
+  with DDGS() as ddgs:
+D:\travel_agent\agents\tools\travel.py:125: RuntimeWarning: This package (`duckduckgo_search`) has been renamed to `ddgs`! Use `pip install ddgs` instead.
+  with DDGS() as ddgs:
+D:\travel_agent\agents\tools\travel.py:152: RuntimeWarning: This package (`duckduckgo_search`) has been renamed to `ddgs`! Use `pip install ddgs` instead.
+  with DDGS() as ddgs:
+D:\travel_agent\agents\tools\travel.py:179: RuntimeWarning: This package (`duckduckgo_search`) has been renamed to `ddgs`! Use `pip install ddgs` instead.
+  with DDGS() as ddgs:
+D:\travel_agent\agents\tools\travel.py:206: RuntimeWarning: This package (`duckduckgo_search`) has been renamed to `ddgs`! Use `pip install ddgs` instead.
+  with DDGS() as ddgs:
+[SUCCESS] LangGraph configuration loaded successfully
+
+==================================================
+TESTING ALL TRAVEL TOOLS
+==================================================
+
+Testing Tool: search_destination_info
+Description: Search for general information about a travel destination including attractions and guides.
+Invoking with args: {'query': 'Tokyo'}
+FAILURE: search_destination_info failed with error: 'charmap' codec can't encode characters in position 70-71: character maps to <undefined>
+
+------------------------------
+
+Testing Tool: search_weather_info
+Description: Search for current weather information and forecasts for a destination.
+Invoking with args: {'destination': 'Tokyo'}
+Result Snippet:
+Current Weather in Tokyo:
+Temperature: 8.42°C (Feels like 3.35°C)
+Conditions: few clouds
+Humidity: 37%
+Wind Speed: 13.89 m/s
+SUCCESS: search_weather_info worked properly.
+
+------------------------------
+
+Testing Tool: search_hotels
+Description: Search for hotel information and pricing in a specific destination.
+Invoking with args: {'destination': 'Tokyo'}
+FAILURE: search_hotels failed with error: 'charmap' codec can't encode characters in position 114-115: character maps to <undefined>
+
+------------------------------
+
+Testing Tool: search_restaurants
+Description: Search for restaurants and dining options in a specific destination.
+Invoking with args: {'destination': 'Tokyo'}
+Result Snippet:
+No restaurant information found for Tokyo
+SUCCESS: search_restaurants worked properly.
+
+------------------------------
+
+Testing Tool: search_attractions
+Description: Search for top attractions and things to do in a specific destination.
+Invoking with args: {'destination': 'Tokyo'}
+FAILURE: search_attractions failed with error: 'charmap' codec can't encode characters in position 97-98: character maps to <undefined>
+
+------------------------------
+
+Testing Tool: search_local_tips
+Description: Search for local tips, culture, and insider information about a destination.
+Invoking with args: {'destination': 'Tokyo'}
+FAILURE: search_local_tips failed with error: 'charmap' codec can't encode characters in position 91-92: character maps to <undefined>
+
+------------------------------
+
+Testing Tool: search_budget_info
+Description: Search for travel budget information and estimated expenses for a destination.
+Invoking with args: {'destination': 'Tokyo', 'duration': '5 days'}
+FAILURE: search_budget_info failed with error: 'charmap' codec can't encode characters in position 99-100: character maps to <undefined>
+
+------------------------------
+
