@@ -3,3 +3,4 @@ langchain-google-genai>=1.0.0
 langgraph>=0.0.20
 python-dotenv>=1.0.0
 streamlit
+duckduckgo_search
