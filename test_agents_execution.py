@@ -47,6 +47,7 @@ def test_coordinator_agent():
         # Create initial state for testing
         initial_state = TravelPlanState(
             messages=[],
+            origin="",
             destination="Paris",
             duration=5,
             budget_range="mid-range",

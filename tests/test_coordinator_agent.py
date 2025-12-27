@@ -45,6 +45,7 @@ def test_coordinator_agent():
     print("\n3. Creating test travel plan state...")
     test_state = TravelPlanState(
         messages=[HumanMessage(content="I want to plan a trip to Paris")],
+        origin="",
         destination="Paris, France",
         duration=5,
         budget_range="mid-range",

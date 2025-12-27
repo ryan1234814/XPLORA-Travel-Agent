@@ -59,6 +59,7 @@ def test_coordinator_and_travel_advisor_together() -> bool:
     print("\n3. Creating initial state...")
     state: TravelPlanState = TravelPlanState(
         messages=[HumanMessage(content="I want to plan a trip to Paris")],
+        origin="",
         destination="Paris, France",
         duration=5,
         budget_range="mid-range",

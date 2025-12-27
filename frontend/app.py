@@ -230,6 +230,7 @@ with st.sidebar:
     st.markdown("*Your Personal Travel Architect*")
     st.markdown("---")
     
+    origin = st.text_input("Origin (Optional)", placeholder="e.g. New Delhi (DEL)")
     destination = st.text_input("Destination", placeholder="e.g. Kyoto, Japan")
     duration = st.slider("Duration (Days)", 1, 14, 3)
     budget = st.selectbox("Tier", ["Essential", "Premier", "Elite", "Legendary"])
@@ -254,6 +255,7 @@ if generate_btn:
         with st.spinner(f"Curating your elite {destination} experience..."):
             state = TravelPlanState(
                 messages=[],
+                origin=origin,
                 destination=destination,
                 duration=duration,
                 budget_range=budget,
@@ -283,6 +285,7 @@ if generate_btn:
 # RENDER UI
 if st.session_state.itinerary_data:
     itinerary = st.session_state.itinerary_data.get("itinerary_planner", {}).get("output")
+    mobility = st.session_state.itinerary_data.get("transport_mobility", {}).get("output")
     
     # Re-attempt parsing if it's a string that looks like JSON or if it's messy
     if isinstance(itinerary, str):
@@ -295,6 +298,17 @@ if st.session_state.itinerary_data:
                 json_match = re.search(r'(\{.*\})', itinerary, re.DOTALL)
                 if json_match:
                     itinerary = json.loads(json_match.group(1))
+            except:
+                pass
+
+    if isinstance(mobility, str):
+        try:
+            mobility = json.loads(mobility.strip())
+        except:
+            try:
+                json_match = re.search(r'(\{.*\})', mobility, re.DOTALL)
+                if json_match:
+                    mobility = json.loads(json_match.group(1))
             except:
                 pass
             
@@ -387,6 +401,87 @@ if st.session_state.itinerary_data:
                 st.write(f"Conditions: {weather_info.get('conditions_summary', 'Clear skies')}")
             else:
                 st.write(get_content(weather_info)[:150] + "...")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            st.markdown('<div class="side-panel">', unsafe_allow_html=True)
+            st.markdown('<div class="side-panel-title">🚆 Transport & Mobility</div>', unsafe_allow_html=True)
+
+            if isinstance(mobility, dict):
+                flights = mobility.get("flights", {})
+                trains = mobility.get("regional_trains_buses", {})
+                transfers = mobility.get("airport_transfers", {})
+                local = mobility.get("local_transport", {})
+                route = mobility.get("route_optimization", {})
+
+                with st.expander("Flight search & comparison"):
+                    tips = flights.get("comparison_tips", [])
+                    if tips:
+                        st.markdown("\n".join([f"- {t}" for t in tips]))
+                    queries = flights.get("recommended_search_queries", [])
+                    if queries:
+                        st.markdown("\n".join([f"- `{q}`" for q in queries]))
+                    if flights.get("notes"):
+                        st.write(flights.get("notes"))
+
+                with st.expander("Train / bus options"):
+                    hints = trains.get("provider_hints", [])
+                    if hints:
+                        st.markdown("\n".join([f"- {h}" for h in hints]))
+                    queries = trains.get("recommended_search_queries", [])
+                    if queries:
+                        st.markdown("\n".join([f"- `{q}`" for q in queries]))
+                    if trains.get("notes"):
+                        st.write(trains.get("notes"))
+
+                with st.expander("Airport transfers"):
+                    options = transfers.get("options", [])
+                    if options:
+                        for opt in options[:6]:
+                            mode = opt.get("mode", "")
+                            why = opt.get("why", "")
+                            tmin = opt.get("typical_time_min", None)
+                            time_txt = f" (~{int(tmin)} min)" if isinstance(tmin, (int, float)) else ""
+                            st.markdown(f"- **{mode}{time_txt}**: {why}")
+                    queries = transfers.get("recommended_search_queries", [])
+                    if queries:
+                        st.markdown("\n".join([f"- `{q}`" for q in queries]))
+                    if transfers.get("notes"):
+                        st.write(transfers.get("notes"))
+
+                with st.expander("Local transport guidance"):
+                    passes = local.get("passes", [])
+                    apps = local.get("apps", [])
+                    how = local.get("how_to_get_around", [])
+                    if passes:
+                        st.markdown("\n".join([f"- {p}" for p in passes]))
+                    if apps:
+                        st.markdown("\n".join([f"- {a}" for a in apps]))
+                    if how:
+                        st.markdown("\n".join([f"- {h}" for h in how]))
+                    queries = local.get("recommended_search_queries", [])
+                    if queries:
+                        st.markdown("\n".join([f"- `{q}`" for q in queries]))
+                    if local.get("notes"):
+                        st.write(local.get("notes"))
+
+                with st.expander("Route optimization"):
+                    if route.get("strategy"):
+                        st.write(route.get("strategy"))
+                    groupings = route.get("suggested_area_groupings", [])
+                    if groupings:
+                        st.markdown("\n".join([f"- {g}" for g in groupings]))
+                    stops = route.get("sample_day_route_stops", [])
+                    if stops:
+                        st.markdown("\n".join([f"- {s}" for s in stops]))
+                    url = route.get("google_maps_directions_url", "")
+                    if url:
+                        st.markdown(f"[Open in Google Maps →]({url})")
+            else:
+                if mobility:
+                    st.write(get_content(mobility)[:300] + "...")
+                else:
+                    st.write("Movement planning will appear here after itinerary generation.")
+
             st.markdown('</div>', unsafe_allow_html=True)
 
     elif itinerary:

@@ -225,6 +225,145 @@ def search_budget_info(destination: str, duration: str = "7 days") -> str:
     except Exception as e:
         return f"Error searching budget info: {str(e)}"
 
+@tool
+def search_flights(origin: str, destination: str, travel_dates: str = "") -> str:
+    """Search for flight options and comparison pages between an origin and destination."""
+    try:
+        if not origin or not destination:
+            return "Missing origin or destination for flight search."
+
+        query = f"flights {origin} to {destination} {travel_dates} price compare"
+        with DDGS() as ddgs:
+            results = list(ddgs.text(
+                query,
+                max_results=8,
+                region=config.DUCKDUCKGO_REGION,
+                safesearch=config.DUCKDUCKGO_SAFESEARCH
+            ))
+
+            if not results:
+                return f"No flight search results found for {origin} → {destination}."
+
+            formatted = [f"Flight search results for {origin} → {destination} ({travel_dates or 'dates flexible'}):"]
+            for i, r in enumerate(results[:5], 1):
+                formatted.append(
+                    f"{i}. {r.get('title', 'No title')}\n"
+                    f"   {r.get('body', 'No description')[:220]}...\n"
+                    f"   Source: {r.get('href', 'No URL')}\n"
+                )
+            return "\n".join(formatted)
+    except Exception as e:
+        return f"Error searching flights: {str(e)}"
+
+@tool
+def search_train_bus_options(origin: str, destination: str, region_hint: str = "") -> str:
+    """Search for train/bus options between an origin and destination (region-specific where possible)."""
+    try:
+        if not origin or not destination:
+            return "Missing origin or destination for train/bus search."
+
+        query = f"train bus {origin} to {destination} {region_hint} tickets schedule"
+        with DDGS() as ddgs:
+            results = list(ddgs.text(
+                query,
+                max_results=8,
+                region=config.DUCKDUCKGO_REGION,
+                safesearch=config.DUCKDUCKGO_SAFESEARCH
+            ))
+
+            if not results:
+                return f"No train/bus results found for {origin} → {destination}."
+
+            formatted = [f"Train/Bus results for {origin} → {destination}:"]
+            for i, r in enumerate(results[:5], 1):
+                formatted.append(
+                    f"{i}. {r.get('title', 'No title')}\n"
+                    f"   {r.get('body', 'No description')[:220]}...\n"
+                    f"   Source: {r.get('href', 'No URL')}\n"
+                )
+            return "\n".join(formatted)
+    except Exception as e:
+        return f"Error searching train/bus options: {str(e)}"
+
+@tool
+def suggest_airport_transfers(destination: str, airport_code_or_name: str = "") -> str:
+    """Search for airport transfer options (train, taxi, rideshare, shuttle) for a destination."""
+    try:
+        if not destination:
+            return "Missing destination for airport transfer suggestions."
+
+        airport_part = f" {airport_code_or_name}" if airport_code_or_name else ""
+        query = f"{destination}{airport_part} airport transfer options train bus taxi shuttle rideshare"
+
+        with DDGS() as ddgs:
+            results = list(ddgs.text(
+                query,
+                max_results=8,
+                region=config.DUCKDUCKGO_REGION,
+                safesearch=config.DUCKDUCKGO_SAFESEARCH
+            ))
+
+            if not results:
+                return f"No airport transfer results found for {destination}."
+
+            formatted = [f"Airport transfer options for {destination}:"]
+            for i, r in enumerate(results[:5], 1):
+                formatted.append(
+                    f"{i}. {r.get('title', 'No title')}\n"
+                    f"   {r.get('body', 'No description')[:220]}...\n"
+                    f"   Source: {r.get('href', 'No URL')}\n"
+                )
+            return "\n".join(formatted)
+    except Exception as e:
+        return f"Error searching airport transfers: {str(e)}"
+
+@tool
+def search_local_transport_guidance(destination: str) -> str:
+    """Search for local transport guidance (metro cards, passes, apps, safety) for a destination."""
+    try:
+        if not destination:
+            return "Missing destination for local transport guidance."
+
+        query = f"{destination} public transport guide metro pass IC card apps how to use"
+        with DDGS() as ddgs:
+            results = list(ddgs.text(
+                query,
+                max_results=8,
+                region=config.DUCKDUCKGO_REGION,
+                safesearch=config.DUCKDUCKGO_SAFESEARCH
+            ))
+
+            if not results:
+                return f"No local transport guidance found for {destination}."
+
+            formatted = [f"Local transport guidance for {destination}:"]
+            for i, r in enumerate(results[:5], 1):
+                formatted.append(
+                    f"{i}. {r.get('title', 'No title')}\n"
+                    f"   {r.get('body', 'No description')[:220]}...\n"
+                    f"   Source: {r.get('href', 'No URL')}\n"
+                )
+            return "\n".join(formatted)
+    except Exception as e:
+        return f"Error searching local transport guidance: {str(e)}"
+
+@tool
+def build_google_maps_directions_link(stops: List[str]) -> str:
+    """Build a Google Maps Directions URL for up to 10 stops (origin + waypoints + destination) using text queries."""
+    try:
+        cleaned = [s.strip() for s in (stops or []) if isinstance(s, str) and s.strip()]
+        if len(cleaned) < 2:
+            return ""
+        origin = cleaned[0].replace(" ", "+")
+        destination = cleaned[-1].replace(" ", "+")
+        waypoints = [s.replace(" ", "+") for s in cleaned[1:-1]]
+        url = f"https://www.google.com/maps/dir/?api=1&origin={origin}&destination={destination}"
+        if waypoints:
+            url += f"&waypoints={'%7C'.join(waypoints)}"
+        return url
+    except Exception:
+        return ""
+
 # Export all tools in a single list
 ALL_TOOLS = [
     search_destination_info,
@@ -233,5 +372,10 @@ ALL_TOOLS = [
     search_restaurants,
     search_attractions,
     search_local_tips,
-    search_budget_info
+    search_budget_info,
+    search_flights,
+    search_train_bus_options,
+    suggest_airport_transfers,
+    search_local_transport_guidance,
+    build_google_maps_directions_link
 ]

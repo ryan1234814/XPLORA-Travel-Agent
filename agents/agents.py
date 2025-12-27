@@ -6,6 +6,8 @@ import re
 from datetime import datetime
 from langchain_google_genai import ChatGoogleGenerativeAI
 from config.langgraph_config import LangGraphConfig as config
+from config.api_config import api_config
+import requests
 
 def _safe_message_content(message: Any) -> str:
     """Convert a LangChain message (or any object) into a displayable string."""
@@ -67,6 +69,7 @@ from agents.tools.travel import (
 
 class TravelPlanState(TypedDict):
     messages:Annotated[List[HumanMessage|AIMessage|SystemMessage],add_message]
+    origin:str
     destination:str
     duration:int
     budget_range:str
@@ -95,6 +98,7 @@ class LangTravelAgents:
         workflow.add_node("weather_analyst",self._weather_analyst_agent)
         workflow.add_node("budget_optimizer",self._budget_optimizer_agent)
         workflow.add_node("local_expert",self._local_expert_agent)
+        workflow.add_node("transport_mobility",self._transport_mobility_agent)
         workflow.add_node("itinerary_planner",self._itinerary_planner_agent)
         workflow.add_node("coordinator",self._coordinator_agent)
         workflow.add_node("tool_executor",self._tool_executor_agent)
@@ -107,12 +111,13 @@ class LangTravelAgents:
                 "weather_analyst": "weather_analyst", 
                 "budget_optimizer": "budget_optimizer",
                 "local_expert": "local_expert",
+                "transport_mobility": "transport_mobility",
                 "itinerary_planner": "itinerary_planner",
                 "tools": "tool_executor",
                 "end": END
             }
         )
-        for agent in  ["travel_advisor", "weather_analyst", "budget_optimizer", "local_expert", "itinerary_planner"]:
+        for agent in  ["travel_advisor", "weather_analyst", "budget_optimizer", "local_expert", "transport_mobility", "itinerary_planner"]:
             workflow.add_conditional_edges(
                 agent,
                 self._agent_router,
@@ -147,6 +152,7 @@ Available agents:
 - weather_analyst: Weather forecasting and activity planning
 - budget_optimizer: Cost analysis and money-saving strategies
 - local_expert: Local insights and cultural tips
+- transport_mobility: End-to-end movement planning (flights, rail/bus, transfers, local transport, route optimization)
 - itinerary_planner: Schedule optimization and logistics
 
 Agent outputs so far: {json.dumps(state.get('agent_outputs', {}), indent=2)}
@@ -158,7 +164,7 @@ Based on the current state, decide what to do next:
 4. ONLY respond with 'FINAL_PLAN' if the 'itinerary_planner' has already completed its work and you are ready to conclude.
 
 Your response should be either:
-- Agent name to call next (travel_advisor, weather_analyst, budget_optimizer, local_expert, itinerary_planner)
+- Agent name to call next (travel_advisor, weather_analyst, budget_optimizer, local_expert, transport_mobility, itinerary_planner)
 - 'FINAL_PLAN' if the itinerary is already created and you are ready to conclude
 - 'SEARCH' if you need to search for information first
 """
@@ -191,6 +197,8 @@ Your response should be either:
             return "budget_optimizer"
         if "local_expert" in content_lower:
             return "local_expert"
+        if "transport_mobility" in content_lower or "transport" in content_lower or "mobility" in content_lower:
+            return "transport_mobility"
         if "itinerary_planner" in content_lower:
             return "itinerary_planner"
         if "search" in content_lower:
@@ -247,6 +255,58 @@ Otherwise, provide your expert recommendations based on your knowledge.
         
         return new_state
     def _weather_analyst_agent(self,state:TravelPlanState)->TravelPlanState:
+        # Prefer real-time weather from OpenWeather when available.
+        try:
+            if api_config.OPENWEATHER_API_KEY and state.get('destination'):
+                params = {
+                    "q": state.get('destination'),
+                    "appid": api_config.OPENWEATHER_API_KEY,
+                    "units": "metric"
+                }
+                resp = requests.get(f"{api_config.WEATHER_BASE_URL}/weather", params=params, timeout=15)
+                if resp.status_code == 200:
+                    data = resp.json() or {}
+                    main = data.get("main", {}) or {}
+                    wind = data.get("wind", {}) or {}
+                    weather = (data.get("weather") or [{}])[0] or {}
+                    sys_data = data.get("sys", {}) or {}
+
+                    parsed = {
+                        "destination": data.get("name") or state.get('destination'),
+                        "travel_dates": state.get('travel_dates'),
+                        "temperature_c": {
+                            "expected_low": main.get("temp_min"),
+                            "expected_high": main.get("temp_max"),
+                            "typical_range": f"{main.get('temp_min', 'N/A')}–{main.get('temp_max', 'N/A')}°C",
+                            "notes": f"Current: {main.get('temp')}°C (feels like {main.get('feels_like')}°C)"
+                        },
+                        "conditions_summary": weather.get("description") or "",
+                        "best_times": [],
+                        "activity_suggestions": [],
+                        "packing": [],
+                        "source": {
+                            "provider": "openweather",
+                            "country": sys_data.get("country"),
+                            "humidity_pct": main.get("humidity"),
+                            "wind_speed_mps": wind.get("speed")
+                        }
+                    }
+
+                    agent_outputs = state.get("agent_outputs", {})
+                    agent_outputs["weather_analyst"] = {
+                        "response": json.dumps(parsed),
+                        "output": parsed,
+                        "timestamp": datetime.now().isoformat(),
+                        "status": "completed"
+                    }
+                    new_state = state.copy()
+                    new_state["messages"] = state.get("messages", []) + [AIMessage(content=json.dumps(parsed))]
+                    new_state["current_agent"] = "weather_analyst"
+                    new_state["agent_outputs"] = agent_outputs
+                    return new_state
+        except Exception:
+            pass
+
         system_prompt = f"""You are the Weather Analyst Agent, specialized in weather intelligence and climate-aware planning.
 
 Your expertise includes:
@@ -351,6 +411,83 @@ Otherwise, provide your budget analysis and recommendations.
         new_state = state.copy()
         new_state["messages"] = state.get("messages", []) + [response]
         new_state["current_agent"] = "budget_optimizer"
+        new_state["agent_outputs"] = agent_outputs
+        return new_state
+
+    def _transport_mobility_agent(self, state: TravelPlanState) -> TravelPlanState:
+        """Transport & Mobility agent - produces structured JSON for end-to-end movement planning."""
+        system_prompt = f"""You are the Transport & Mobility Agent.
+
+Purpose: End-to-end movement planning for a trip.
+
+Trip context:
+- Origin (if provided): {state.get('origin', '')}
+- Destination: {state.get('destination')}
+- Duration: {state.get('duration')} days
+- Group size: {state.get('group_size')}
+- Budget tier: {state.get('budget_range')}
+- Interests: {', '.join(state.get('interests', []))}
+
+Your tasks:
+1) Flight search & comparison guidance (best sites/strategies, what to compare).
+2) Train/bus options (region-specific tips, when rail is better than flying).
+3) Airport transfer suggestions (best options, rough timing, pitfalls).
+4) Local transport guidance (cards/passes, apps, etiquette, safety).
+5) Route optimization between attractions: propose an efficient order and grouping strategy.
+
+IMPORTANT: Return STRICT JSON with this schema (no markdown):
+{{
+  "flights": {{
+    "recommended_search_queries": [string],
+    "comparison_tips": [string],
+    "notes": string
+  }},
+  "regional_trains_buses": {{
+    "recommended_search_queries": [string],
+    "provider_hints": [string],
+    "notes": string
+  }},
+  "airport_transfers": {{
+    "recommended_search_queries": [string],
+    "options": [{{"mode": string, "why": string, "typical_time_min": number|null}}],
+    "notes": string
+  }},
+  "local_transport": {{
+    "recommended_search_queries": [string],
+    "how_to_get_around": [string],
+    "apps": [string],
+    "passes": [string],
+    "notes": string
+  }},
+  "route_optimization": {{
+    "strategy": string,
+    "suggested_area_groupings": [string],
+    "sample_day_route_stops": [string],
+    "google_maps_directions_url": string
+  }}
+}}
+
+If you need live data, respond with 'NEED_SEARCH: [query]'.
+"""
+
+        messages = [SystemMessage(content=system_prompt)]
+        if state.get("messages"):
+            messages.extend(state["messages"][-2:])
+        response = self.llm.invoke(messages)
+        response_text = _safe_message_content(response)
+        parsed = _try_parse_json(response_text)
+
+        agent_outputs = state.get("agent_outputs", {})
+        agent_outputs["transport_mobility"] = {
+            "response": response_text,
+            "output": parsed if isinstance(parsed, dict) else response_text,
+            "timestamp": datetime.now().isoformat(),
+            "status": "completed"
+        }
+
+        new_state = state.copy()
+        new_state["messages"] = state.get("messages", []) + [response]
+        new_state["current_agent"] = "transport_mobility"
         new_state["agent_outputs"] = agent_outputs
         return new_state
     

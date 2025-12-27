@@ -1,5 +1,8 @@
 import os
 from typing import Optional
+from dotenv import load_dotenv, find_dotenv
+
+load_dotenv(find_dotenv())
 OPENWEATHER_API_KEY: Optional[str] = os.getenv('OPENWEATHER_API_KEY')
 WEATHER_BASE_URL: str = "http://api.openweathermap.org/data/2.5"
 
