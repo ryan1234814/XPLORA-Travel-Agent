@@ -1,13 +1,25 @@
 from typing import List,Dict,Any,Optional,Annotated,TypedDict
-from langchain_core.messages import HumanMessage,AIMessage,SystemMessage
+import warnings
+# Suppress the deprecated langchain.verbose warning from langchain_core
+warnings.filterwarnings("ignore", category=UserWarning, message=".*Importing verbose from langchain root module.*")
+from langchain_core.messages import HumanMessage,AIMessage,SystemMessage, BaseMessage
 from langgraph.graph import StateGraph,END
 import json
 import re
+import time
 from datetime import datetime
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from config.langgraph_config import LangGraphConfig as config
 from config.api_config import api_config
 import requests
+import threading
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
+
+# Generic retry logic for Gemini Rate Limits (429)
+def is_rate_limit_error(exception):
+    """Check if the error is a rate limit error."""
+    error_str = str(exception).lower()
+    return "ratelimit" in error_str or "slow down" in error_str or "429" in error_str
 
 def _safe_message_content(message: Any) -> str:
     """Convert a LangChain message (or any object) into a displayable string."""
@@ -57,6 +69,7 @@ def _try_parse_json(text: str) -> Optional[Dict[str, Any]]:
 def add_message(left: list, right: list) -> list:
     """Helper function to add messages"""
     return left + right
+
 from agents.tools.travel import (
     search_destination_info, 
     search_weather_info, 
@@ -64,7 +77,10 @@ from agents.tools.travel import (
     search_restaurants, 
     search_attractions, 
     search_local_tips, 
-    search_budget_info
+    search_budget_info,
+    search_local_transport_options,
+    search_car_rentals,
+    search_real_time_transit_info
 )
 
 class TravelPlanState(TypedDict):
@@ -83,15 +99,56 @@ class TravelPlanState(TypedDict):
     
 class LangTravelAgents:
     def __init__(self):
-        self.llm=ChatGoogleGenerativeAI(
-            model=config.GEMINI_MODEL,
-            google_api_key=config.GEMINI_API_KEY,
+        self.llm = ChatOpenAI(
+            model=config.OPENROUTER_MODEL,
+            openai_api_key=config.OPENROUTER_API_KEY,
+            base_url="https://openrouter.ai/api/v1",
             temperature=config.TEMPERATURE,
-            max_output_tokens=config.MAX_TOKENS,
-            top_p=config.TOP_P,
+            max_tokens=config.MAX_TOKENS,
+            model_kwargs={
+                "extra_headers": {
+                    "HTTP-Referer": "https://github.com/ryan1234814/XPLORA-Travel-Agent",
+                    "X-Title": "XPLORA Travel Agent",
+                }
+            }
         )
+        self._lock = threading.Lock()
+        self._last_request_time = 0
+        self.request_interval = 1.0 
         self.graph=self.create_agent_graph()
+
+    @retry(
+        retry=retry_if_exception(is_rate_limit_error),
+        wait=wait_exponential(multiplier=2, min=4, max=60),
+        stop=stop_after_attempt(5),
+        reraise=True
+    )
+    def _invoke_llm(self, messages: List[BaseMessage]):
+        """Robust wrapper for LLM invocation using OpenRouter."""
+        # Proactive Rate Limiting
+        with self._lock:
+            elapsed = time.time() - self._last_request_time
+            if elapsed < self.request_interval:
+                time.sleep(self.request_interval - elapsed)
+            self._last_request_time = time.time()
+
+        # Clean messages: Ensure no empty content
+        cleaned_messages = []
+        for msg in messages:
+            content = _safe_message_content(msg).strip()
+            if content:
+                if isinstance(msg, SystemMessage):
+                    cleaned_messages.append(SystemMessage(content=content))
+                elif isinstance(msg, AIMessage):
+                    cleaned_messages.append(AIMessage(content=content))
+                else:
+                    cleaned_messages.append(HumanMessage(content=content))
         
+        if not cleaned_messages:
+            cleaned_messages = [HumanMessage(content="Please provide travel recommendations.")]
+            
+        return self.llm.invoke(cleaned_messages)
+
     def create_agent_graph(self)->StateGraph:
         workflow=StateGraph(TravelPlanState)
         workflow.add_node("travel_advisor",self._travel_advisor_agent)
@@ -174,7 +231,8 @@ Your response should be either:
          else:
              # Add a human message to start the conversation
              messages.append(HumanMessage(content="Please analyze the travel request and determine which agents should contribute."))
-         response=self.llm.invoke(messages)  
+         
+         response = self._invoke_llm(messages)  
          new_state=state.copy()
          new_state["messages"]=state.get("messages",[])+[response] 
          new_state["current_agent"] = "coordinator"
@@ -210,8 +268,6 @@ Your response should be either:
             return "end"
         return "travel_advisor"
 
-   
-   
     def _travel_advisor_agent(self,state:TravelPlanState)->TravelPlanState:
         system_prompt = f"""You are the Travel Advisor Agent, specialized in destination expertise and recommendations.
 
@@ -228,18 +284,17 @@ Current planning request:
 - Group size: {state.get('group_size')}
 
 Your task: Provide comprehensive destination advice including:
-1. Top attractions and must-see places
-2. Cultural insights and etiquette tips
-3. Best areas to stay and explore
-4. Activity recommendations based on interests
+1. ALWAYS use 'NEED_SEARCH: [query]' first to get current, real-world data about the destination, its top attractions, and local gems.
+2. Based on the search results, suggest must-see places and cultural insights.
+3. Activity recommendations based on interests.
 
-If you need to search for current information about the destination, respond with 'NEED_SEARCH: [search query]'
-Otherwise, provide your expert recommendations based on your knowledge.
+If you have already received search results in the conversation history, proceed with your expert recommendations. Otherwise, start with a search.
 """
         messages=[SystemMessage(content=system_prompt)]
         if state.get("messages"):
             messages.extend(state["messages"][-2:])
-        response=self.llm.invoke(messages)
+        
+        response = self._invoke_llm(messages)
         agent_outputs=state.get("agent_outputs",{})
         response_text = _safe_message_content(response)
         agent_outputs["travel_advisor"]={
@@ -254,8 +309,9 @@ Otherwise, provide your expert recommendations based on your knowledge.
         new_state['current_agent']='travel_advisor'
         
         return new_state
-    def _weather_analyst_agent(self,state:TravelPlanState)->TravelPlanState:
-        # Prefer real-time weather from OpenWeather when available.
+
+    def _weather_analyst_agent(self, state: TravelPlanState) -> TravelPlanState:
+        # 1. Try real-time weather from OpenWeather when available.
         try:
             if api_config.OPENWEATHER_API_KEY and state.get('destination'):
                 params = {
@@ -267,10 +323,8 @@ Otherwise, provide your expert recommendations based on your knowledge.
                 if resp.status_code == 200:
                     data = resp.json() or {}
                     main = data.get("main", {}) or {}
-                    wind = data.get("wind", {}) or {}
                     weather = (data.get("weather") or [{}])[0] or {}
-                    sys_data = data.get("sys", {}) or {}
-
+                    
                     parsed = {
                         "destination": data.get("name") or state.get('destination'),
                         "travel_dates": state.get('travel_dates'),
@@ -278,18 +332,13 @@ Otherwise, provide your expert recommendations based on your knowledge.
                             "expected_low": main.get("temp_min"),
                             "expected_high": main.get("temp_max"),
                             "typical_range": f"{main.get('temp_min', 'N/A')}–{main.get('temp_max', 'N/A')}°C",
-                            "notes": f"Current: {main.get('temp')}°C (feels like {main.get('feels_like')}°C)"
+                            "notes": f"Current: {main.get('temp')}°C ({weather.get('description')})"
                         },
                         "conditions_summary": weather.get("description") or "",
-                        "best_times": [],
-                        "activity_suggestions": [],
-                        "packing": [],
-                        "source": {
-                            "provider": "openweather",
-                            "country": sys_data.get("country"),
-                            "humidity_pct": main.get("humidity"),
-                            "wind_speed_mps": wind.get("speed")
-                        }
+                        "best_times": ["Morning exploration", "Evening walk"],
+                        "activity_suggestions": [f"Outdoor activities are ideal given {weather.get('description')}"],
+                        "packing": ["Standard travel wear"],
+                        "source": "openweather"
                     }
 
                     agent_outputs = state.get("agent_outputs", {})
@@ -307,28 +356,35 @@ Otherwise, provide your expert recommendations based on your knowledge.
         except Exception:
             pass
 
-        system_prompt = f"""You are the Weather Analyst Agent, specialized in weather intelligence and climate-aware planning.
+        # 2. Check if we have search results already
+        agent_outputs = state.get("agent_outputs", {})
+        search_results = agent_outputs.get("weather_analyst", {}).get("search_results")
+        
+        # 3. If no search results and no OpenWeather, request a search
+        if not search_results and state.get('destination'):
+            response_content = f"NEED_SEARCH: {state.get('destination')} current weather and climate forecast for {state.get('travel_dates') or 'upcoming days'}"
+            new_state = state.copy()
+            new_state["messages"] = state.get("messages", []) + [AIMessage(content=response_content)]
+            new_state["current_agent"] = "weather_analyst"
+            
+            # Initialize the output entry so tool executor knows where to put results
+            if "weather_analyst" not in agent_outputs:
+                agent_outputs["weather_analyst"] = {}
+            agent_outputs["weather_analyst"]["status"] = "searching"
+            new_state["agent_outputs"] = agent_outputs
+            return new_state
 
-Your expertise includes:
-- Weather pattern analysis
-- Seasonal travel recommendations
-- Activity planning based on weather conditions
-- Climate considerations for destinations
+        # 4. Final Fallback/Synthesis with search results or general knowledge
+        system_prompt = f"""You are the Weather Analyst Agent. 
+Provide weather-intelligent recommendations for {state.get('destination')} during {state.get('travel_dates')}.
 
-Current planning request:
-- Destination: {state.get('destination')}
-- Travel dates: {state.get('travel_dates')}
-- Duration: {state.get('duration')} days
-- Planned activities: {', '.join(state.get('interests', []))}
+Search Results provided to you: {search_results or "No specific search results found, use general climate knowledge."}
 
-Your task: Provide weather-intelligent recommendations including:
-1. Expected weather conditions during travel dates
-2. Temperature details (in Celsius) for the destination during the travel dates
-3. Best times of day for outdoor activities
-4. Weather-appropriate activity suggestions
-5. Packing recommendations based on climate
+Your task: Return a STRICT JSON object. 
+DO NOT include any markdown code blocks, backticks, or conversational text. 
+ONLY return the JSON object itself.
 
-Return your result as STRICT JSON with this schema:
+Schema:
 {{
   "destination": string,
   "travel_dates": string,
@@ -343,29 +399,26 @@ Return your result as STRICT JSON with this schema:
   "activity_suggestions": [string],
   "packing": [string]
 }}
-
-If you cannot provide exact temperatures, use typical seasonal ranges and set expected_low/high to null.
-
-If you need current weather data, respond with 'NEED_SEARCH: [weather search query]'
-Otherwise, provide your analysis based on climate knowledge.
 """
-        messages=[SystemMessage(content=system_prompt)]
+        messages = [SystemMessage(content=system_prompt)]
         if state.get("messages"):
             messages.extend(state["messages"][-2:])
-        response=self.llm.invoke(messages)
+        
+        response = self._invoke_llm(messages)
         response_text = _safe_message_content(response)
         parsed = _try_parse_json(response_text)
-        agent_outputs=state.get("agent_outputs",{})
+        
         agent_outputs["weather_analyst"] = {
             "response": response_text,
             "output": parsed if isinstance(parsed, dict) else response_text,
             "timestamp": datetime.now().isoformat(),
-            "status": "completed"
+            "status": "completed",
+            "search_results": search_results
         }
-        new_state=state.copy()
-        new_state["messages"]=state.get("messages",[])+[response]
-        new_state["current_agent"]="weather_analyst"
-        new_state["agent_outputs"]=agent_outputs
+        new_state = state.copy()
+        new_state["messages"] = state.get("messages", []) + [response]
+        new_state["current_agent"] = "weather_analyst"
+        new_state["agent_outputs"] = agent_outputs
         return new_state
     
     def _budget_optimizer_agent(self, state: TravelPlanState) -> TravelPlanState:
@@ -397,7 +450,8 @@ Otherwise, provide your budget analysis and recommendations.
         messages = [SystemMessage(content=system_prompt)]
         if state.get("messages"):
             messages.extend(state["messages"][-2:])
-        response = self.llm.invoke(messages)
+        
+        response = self._invoke_llm(messages)
         response_text = _safe_message_content(response)
         
         agent_outputs = state.get("agent_outputs", {})
@@ -445,11 +499,17 @@ IMPORTANT: Return STRICT JSON with this schema (no markdown):
   "regional_trains_buses": {{
     "recommended_search_queries": [string],
     "provider_hints": [string],
+    "cost_vs_time_analysis": string,
+    "notes": string
+  }},
+  "car_rentals": {{
+    "recommended_search_queries": [string],
+    "options": [{{ "company": string, "estimated_daily_rate": string, "pros_cons": string }}],
     "notes": string
   }},
   "airport_transfers": {{
     "recommended_search_queries": [string],
-    "options": [{{"mode": string, "why": string, "typical_time_min": number|null}}],
+    "options": [{{ "mode": string, "why": string, "cost_estimate": string, "typical_time_min": number|null }}],
     "notes": string
   }},
   "local_transport": {{
@@ -457,6 +517,8 @@ IMPORTANT: Return STRICT JSON with this schema (no markdown):
     "how_to_get_around": [string],
     "apps": [string],
     "passes": [string],
+    "real_time_info_links": [string],
+    "cost_vs_time_comparison": string,
     "notes": string
   }},
   "route_optimization": {{
@@ -467,13 +529,14 @@ IMPORTANT: Return STRICT JSON with this schema (no markdown):
   }}
 }}
 
-If you need live data, respond with 'NEED_SEARCH: [query]'.
+If you need live data, respond with 'NEED_SEARCH: [query]'. Specifically use 'NEED_SEARCH: [destination] transport cost comparison' for comparative analysis.
 """
 
         messages = [SystemMessage(content=system_prompt)]
         if state.get("messages"):
             messages.extend(state["messages"][-2:])
-        response = self.llm.invoke(messages)
+            
+        response = self._invoke_llm(messages)
         response_text = _safe_message_content(response)
         parsed = _try_parse_json(response_text)
 
@@ -519,7 +582,8 @@ Otherwise, provide your local expertise and insights.
         messages = [SystemMessage(content=system_prompt)]
         if state.get("messages"):
             messages.extend(state["messages"][-2:])
-        response = self.llm.invoke(messages)
+            
+        response = self._invoke_llm(messages)
         response_text = _safe_message_content(response)
         
         agent_outputs = state.get("agent_outputs", {})
@@ -545,8 +609,9 @@ Duration: {state.get('duration')} days.
 
 Your task is to provide a complete, high-end travel narrative.
 
-IMPORTANT: Your response must be a single, valid JSON object containing the itinerary. 
-This is critical for the premium user interface to display your curated work.
+IMPORTANT: Your response must be ORGANIZE as a single, valid JSON object.
+DO NOT include any introductory text, conversational filler, or markdown code blocks (no backticks).
+ONLY return the JSON object itself starting with '{' and ending with '}'.
 
 Schema:
 {{
@@ -567,7 +632,13 @@ Schema:
           "description": "Engaging text",
           "location": "Venue Name",
           "tag": "Category",
-          "map_query": "Search query for Google Maps"
+          "map_query": "Search query for Google Maps",
+          "transport_to_next": {{
+             "mode": "e.g., Metro Line 2",
+             "duration": "15 min",
+             "cost": "e.g., $2.50",
+             "instructions": "Brief navigation tip"
+          }}
         }}
       ]
     }}
@@ -580,7 +651,7 @@ Schema:
             # Only keep recent history to stay focused
             messages.extend(state["messages"][-5:])
             
-        response = self.llm.invoke(messages)
+        response = self._invoke_llm(messages)
         response_text = _safe_message_content(response)
         
         # Force JSON parsing using the improved helper
@@ -643,6 +714,12 @@ Schema:
                     tool_result = search_budget_info.invoke({"destination": search_query})
                 elif "tip" in search_query_lower or "culture" in search_query_lower or current_agent == "local_expert":
                     tool_result = search_local_tips.invoke({"destination": search_query})
+                elif "car rental" in search_query_lower:
+                    tool_result = search_car_rentals.invoke({"destination": search_query})
+                elif "transit" in search_query_lower and "real-time" in search_query_lower:
+                    tool_result = search_real_time_transit_info.invoke({"destination": search_query})
+                elif "transport" in search_query_lower or "metro" in search_query_lower or "taxi" in search_query_lower:
+                    tool_result = search_local_transport_options.invoke({"destination": search_query})
                 else:
                     tool_result = search_destination_info.invoke(search_query)
                 

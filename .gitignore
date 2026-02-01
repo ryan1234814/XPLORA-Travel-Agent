@@ -1,4 +1,3 @@
 __pycache__/
-.env
 *.pyc
 test_results_*.txt

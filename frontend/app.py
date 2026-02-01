@@ -1,4 +1,7 @@
 import streamlit as st
+import warnings
+# Suppress the deprecated langchain.verbose warning from langchain_core
+warnings.filterwarnings("ignore", category=UserWarning, message=".*Importing verbose from langchain root module.*")
 import sys
 import os
 import json
@@ -174,6 +177,30 @@ st.markdown("""
         text-decoration: underline;
     }
 
+    /* Transport Info Styling */
+    .transport-info {
+        background: rgba(164, 140, 244, 0.05);
+        border: 1px dashed rgba(164, 140, 244, 0.3);
+        border-radius: 12px;
+        padding: 12px;
+        margin-top: 15px;
+        font-size: 0.85rem;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .transport-header {
+        color: #a48cf4;
+        font-weight: 700;
+        text-transform: uppercase;
+        font-size: 0.7rem;
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
     /* Sidebar Overrides */
     [data-testid="stSidebar"] {
         background-color: #0c0e12;
@@ -242,9 +269,14 @@ with st.sidebar:
     
     st.markdown("<br>", unsafe_allow_html=True)
     generate_btn = st.button("DESIGN ITINERARY", type="primary")
+    
+    if st.button("RESET CONCIERGE", type="secondary"):
+        st.session_state.agent_system = None
+        st.session_state.itinerary_data = None
+        st.rerun()
 
 # Initial State
-if "agent_system" not in st.session_state:
+if "agent_system" not in st.session_state or st.session_state.agent_system is None:
     st.session_state.agent_system = LangTravelAgents()
     st.session_state.itinerary_data = None
 
@@ -272,15 +304,23 @@ if generate_btn:
             progress_container = st.container()
             status_area = st.empty()
             
-            events = st.session_state.agent_system.graph.stream(state, config={"recursion_limit": 50})
-            
-            for event in events:
-                for node_name, node_state in event.items():
-                    status_area.markdown(f"**Fine-tuning:** `{node_name.replace('_', ' ').title()}`")
-                final_state = list(event.values())[0]
+            try:
+                events = st.session_state.agent_system.graph.stream(state, config={"recursion_limit": 50})
+                
+                for event in events:
+                    for node_name, node_state in event.items():
+                        status_area.markdown(f"**Fine-tuning:** `{node_name.replace('_', ' ').title()}`")
+                    final_state = list(event.values())[0]
 
-            st.session_state.itinerary_data = final_state.get("agent_outputs", {})
-            st.rerun()
+                st.session_state.itinerary_data = final_state.get("agent_outputs", {})
+                st.rerun()
+            except Exception as e:
+                error_msg = str(e)
+                if "429" in error_msg or "ratelimit" in error_msg.lower():
+                    st.error("✦ **Concierge is busy.** Our elite planning servers are currently at capacity. Please wait a moment and try again.")
+                else:
+                    st.error(f"✦ **Concierge Interruption:** {error_msg}")
+                st.session_state.agent_system = None # Reset to allow fresh retry
 
 # RENDER UI
 if st.session_state.itinerary_data:
@@ -318,22 +358,22 @@ if st.session_state.itinerary_data:
         with col_main:
             # Trip Header
             st.markdown(f"""
-                <div class="trip-header">
-                    <div class="trip-title">{itinerary.get('trip_title', 'The Ultimate Journey')}</div>
-                    <div class="trip-overview">{itinerary.get('overview', '')}</div>
-                    <div class="badge-container">
-                        <div class="badge">� Sustainable Choice: {itinerary.get('sustainability_score', 85)}%</div>
-                        <div class="badge">� Range: {itinerary.get('price_range', 'Luxury')}</div>
-                    </div>
-                </div>
-                
-                <div class="premium-card">
-                    <div style="color: #a48cf4; font-weight: 700; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 2px; margin-bottom: 12px;">✦ Concierge Perspective</div>
-                    <div style="font-style: italic; color: #cbd5e1; font-size: 1.1rem; border-left: 2px solid #a48cf4; padding-left: 20px;">
-                        "{itinerary.get('concierge_note', 'Welcome to your bespoke adventure.')}"
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
+<div class="trip-header">
+    <div class="trip-title">{itinerary.get('trip_title', 'The Ultimate Journey')}</div>
+    <div class="trip-overview">{itinerary.get('overview', '')}</div>
+    <div class="badge-container">
+        <div class="badge"> Sustainable Choice: {itinerary.get('sustainability_score', 85)}%</div>
+        <div class="badge"> Range: {itinerary.get('price_range', 'Luxury')}</div>
+    </div>
+</div>
+
+<div class="premium-card">
+    <div style="color: #a48cf4; font-weight: 700; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 2px; margin-bottom: 12px;">✦ Concierge Perspective</div>
+    <div style="font-style: italic; color: #cbd5e1; font-size: 1.1rem; border-left: 2px solid #a48cf4; padding-left: 20px;">
+        "{itinerary.get('concierge_note', 'Welcome to your bespoke adventure.')}"
+    </div>
+</div>
+""", unsafe_allow_html=True)
             
             # Day Selection
             day_names = [f"Day {d.get('day_number')}" for d in itinerary.get('days', [])]
@@ -351,22 +391,35 @@ if st.session_state.itinerary_data:
                             map_url = f"https://www.google.com/maps/search/?api=1&query={act.get('map_query', act.get('location')).replace(' ', '+')}"
                             # activity card
                             st.markdown(f"""
-                                <div class="activity-row">
-                                    <div class="activity-time">{act.get('time')}</div>
-                                    <div class="activity-content">
-                                        <div class="activity-name">{act.get('title')}</div>
-                                        <div class="activity-description">{act.get('description')}</div>
-                                        <div class="activity-tags">
-                                            <div class="tag">{act.get('tag', 'Included')}</div>
-                                            <span style="color: #475569;">•</span>
-                                            <div style="color: #94a3b8; font-size:0.85rem;">📍 {act.get('location')}</div>
-                                        </div>
-                                        <a href="{map_url}" target="_blank" class="maps-link">
-                                            <img src="https://img.icons8.com/color/24/google-maps-new.png" width="16" style="margin-bottom: -3px;"/> View Location on Google Maps →
-                                        </a>
-                                    </div>
-                                </div>
-                            """, unsafe_allow_html=True)
+<div class="activity-row">
+    <div class="activity-time">{act.get('time')}</div>
+    <div class="activity-content">
+        <div class="activity-name">{act.get('title')}</div>
+        <div class="activity-description">{act.get('description')}</div>
+        <div class="activity-tags">
+            <div class="tag">{act.get('tag', 'Included')}</div>
+            <span style="color: #475569;">•</span>
+            <div style="color: #94a3b8; font-size:0.85rem;">📍 {act.get('location')}</div>
+        </div>
+        <a href="{map_url}" target="_blank" class="maps-link">
+            <img src="https://img.icons8.com/color/24/google-maps-new.png" width="16" style="margin-bottom: -3px;"/> View Location on Google Maps →
+        </a>
+        {f'''
+        <div class="transport-info">
+            <div class="transport-header">
+                <span>🚀 Next Movement</span>
+                <span style="opacity: 0.5;">|</span>
+                <span>{act.get('transport_to_next', {}).get('mode', 'Standard Transit')}</span>
+            </div>
+            <div style="color: #cbd5e1;">{act.get('transport_to_next', {}).get('instructions', 'Proceed to your next destination.')}</div>
+            <div style="display: flex; gap: 15px; margin-top: 5px; color: #94a3b8; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 0.75rem;">
+                <span>⏱ {act.get('transport_to_next', {}).get('duration', 'N/A')}</span>
+                <span>💰 {act.get('transport_to_next', {}).get('cost', 'N/A')}</span>
+            </div>
+        </div>''' if act.get('transport_to_next') else ''}
+    </div>
+</div>
+""", unsafe_allow_html=True)
                             
                             # Integrated Map for each activity (optional expander)
                             with st.expander(f"Explore {act.get('title')} 📍"):
@@ -397,7 +450,9 @@ if st.session_state.itinerary_data:
             st.markdown('<div class="side-panel-title">🌦️ Climate Outlook</div>', unsafe_allow_html=True)
             weather_info = st.session_state.itinerary_data.get("weather_analyst", {}).get("output")
             if isinstance(weather_info, dict):
-                st.write(f"High: {weather_info.get('temperature_c', {}).get('expected_high', 'N/A')}°C")
+                temp_high = weather_info.get('temperature_c', {}).get('expected_high')
+                temp_display = f"{temp_high}°C" if temp_high is not None else "N/A"
+                st.write(f"High: {temp_display}")
                 st.write(f"Conditions: {weather_info.get('conditions_summary', 'Clear skies')}")
             else:
                 st.write(get_content(weather_info)[:150] + "...")
@@ -430,8 +485,24 @@ if st.session_state.itinerary_data:
                     queries = trains.get("recommended_search_queries", [])
                     if queries:
                         st.markdown("\n".join([f"- `{q}`" for q in queries]))
+                    if trains.get("cost_vs_time_analysis"):
+                        st.info(f"**Analysis:** {trains.get('cost_vs_time_analysis')}")
                     if trains.get("notes"):
                         st.write(trains.get("notes"))
+
+                with st.expander("Car rental options"):
+                    rentals = mobility.get("car_rentals", {})
+                    options = rentals.get("options", [])
+                    if options:
+                        for opt in options:
+                            st.markdown(f"**{opt.get('company', 'Rental')}**")
+                            st.markdown(f"- Rate: {opt.get('estimated_daily_rate', 'N/A')}")
+                            st.markdown(f"- Details: {opt.get('pros_cons', 'N/A')}")
+                    queries = rentals.get("recommended_search_queries", [])
+                    if queries:
+                        st.markdown("\n".join([f"- `{q}`" for q in queries]))
+                    if rentals.get("notes"):
+                        st.write(rentals.get("notes"))
 
                 with st.expander("Airport transfers"):
                     options = transfers.get("options", [])
@@ -440,8 +511,10 @@ if st.session_state.itinerary_data:
                             mode = opt.get("mode", "")
                             why = opt.get("why", "")
                             tmin = opt.get("typical_time_min", None)
+                            cost = opt.get("cost_estimate", "")
                             time_txt = f" (~{int(tmin)} min)" if isinstance(tmin, (int, float)) else ""
-                            st.markdown(f"- **{mode}{time_txt}**: {why}")
+                            cost_txt = f" [{cost}]" if cost else ""
+                            st.markdown(f"- **{mode}{time_txt}{cost_txt}**: {why}")
                     queries = transfers.get("recommended_search_queries", [])
                     if queries:
                         st.markdown("\n".join([f"- `{q}`" for q in queries]))
@@ -458,6 +531,8 @@ if st.session_state.itinerary_data:
                         st.markdown("\n".join([f"- {a}" for a in apps]))
                     if how:
                         st.markdown("\n".join([f"- {h}" for h in how]))
+                    if local.get("cost_vs_time_comparison"):
+                        st.info(f"**Comparison:** {local.get('cost_vs_time_comparison')}")
                     queries = local.get("recommended_search_queries", [])
                     if queries:
                         st.markdown("\n".join([f"- `{q}`" for q in queries]))

@@ -1,7 +1,6 @@
 import asyncio
 from typing import List, Dict, Any, Optional
 from langchain_core.tools import tool
-from langchain_google_genai import ChatGoogleGenerativeAI
 from duckduckgo_search import DDGS
 import json
 import re
@@ -348,6 +347,95 @@ def search_local_transport_guidance(destination: str) -> str:
         return f"Error searching local transport guidance: {str(e)}"
 
 @tool
+def search_local_transport_options(destination: str, origin_point: str = "", destination_point: str = "") -> str:
+    """Search for specific local transport options (taxi, metro, bus) with cost and time estimates."""
+    try:
+        if not destination:
+            return "Missing destination for local transport options."
+        
+        query = f"{destination} {origin_point} to {destination_point} transport options cost price time duration"
+        if not origin_point:
+            query = f"{destination} public transport vs taxi vs uber cost comparison and travel times"
+
+        with DDGS() as ddgs:
+            results = list(ddgs.text(
+                query,
+                max_results=8,
+                region=config.DUCKDUCKGO_REGION,
+                safesearch=config.DUCKDUCKGO_SAFESEARCH
+            ))
+
+            if not results:
+                return f"No specific transport options found for {destination}."
+
+            formatted = [f"Local transport options for {destination}:"]
+            for i, r in enumerate(results[:5], 1):
+                formatted.append(
+                    f"{i}. {r.get('title', 'No title')}\n"
+                    f"   {r.get('body', 'No description')[:250]}...\n"
+                    f"   Source: {r.get('href', 'No URL')}\n"
+                )
+            return "\n".join(formatted)
+    except Exception as e:
+        return f"Error searching transport options: {str(e)}"
+
+@tool
+def search_car_rentals(destination: str, car_type: str = "standard") -> str:
+    """Search for car rental options, companies, and estimated daily prices in a destination."""
+    try:
+        if not destination:
+            return "Missing destination for car rental search."
+
+        query = f"{destination} car rental price per day {car_type} companies best deals"
+        with DDGS() as ddgs:
+            results = list(ddgs.text(
+                query,
+                max_results=6,
+                region=config.DUCKDUCKGO_REGION,
+                safesearch=config.DUCKDUCKGO_SAFESEARCH
+            ))
+
+            if not results:
+                return f"No car rental information found for {destination}."
+
+            rentals = [f"Car rental options in {destination}:"]
+            for i, r in enumerate(results[:4], 1):
+                rentals.append(
+                    f"{i}. {r.get('title', 'Rental Info')}\n"
+                    f"   {r.get('body', 'No details')[:220]}...\n"
+                )
+            return "\n".join(rentals)
+    except Exception as e:
+        return f"Error searching car rentals: {str(e)}"
+
+@tool
+def search_real_time_transit_info(destination: str) -> str:
+    """Search for real-time transit information, service alerts, and live maps for a destination's transport network."""
+    try:
+        query = f"{destination} real-time transit info live bus train metro status service alerts"
+        with DDGS() as ddgs:
+            results = list(ddgs.text(
+                query,
+                max_results=5,
+                region=config.DUCKDUCKGO_REGION,
+                safesearch=config.DUCKDUCKGO_SAFESEARCH
+            ))
+            
+            if not results:
+                return f"No real-time transit info found for {destination}."
+                
+            info = [f"Real-time transit information for {destination}:"]
+            for r in results[:3]:
+                info.append(
+                    f"• {r.get('title', 'Transit Update')}\n"
+                    f"  {r.get('body', 'No details')[:250]}...\n"
+                    f"  Link: {r.get('href', 'No URL')}\n"
+                )
+            return "\n".join(info)
+    except Exception as e:
+        return f"Error searching real-time transit: {str(e)}"
+
+@tool
 def build_google_maps_directions_link(stops: List[str]) -> str:
     """Build a Google Maps Directions URL for up to 10 stops (origin + waypoints + destination) using text queries."""
     try:
@@ -377,5 +465,8 @@ ALL_TOOLS = [
     search_train_bus_options,
     suggest_airport_transfers,
     search_local_transport_guidance,
-    build_google_maps_directions_link
+    build_google_maps_directions_link,
+    search_local_transport_options,
+    search_car_rentals,
+    search_real_time_transit_info
 ]
