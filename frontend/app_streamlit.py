@@ -25,13 +25,45 @@ st.set_page_config(
 
 # Robust message content extractor
 def get_content(msg):
+    """Extract and sanitize content from messages, removing HTML/JSON code blocks."""
     if msg is None:
         return ""
+    
+    content = ""
     if hasattr(msg, 'content'):
-        return msg.content
-    if isinstance(msg, dict) and 'output' in msg:
-        return msg['output']
-    return str(msg)
+        content = msg.content
+    elif isinstance(msg, dict) and 'output' in msg:
+        content = msg['output']
+    else:
+        content = str(msg)
+    
+    # If content is a dict or list, don't display it as raw JSON
+    if isinstance(content, (dict, list)):
+        return "[Structured data - please regenerate itinerary]"
+    
+    # Convert to string and sanitize
+    content = str(content)
+    
+    # Remove markdown code blocks (both ```json and ```)
+    import re
+    content = re.sub(r'```json\s*.*?\s*```', '', content, flags=re.DOTALL)
+    content = re.sub(r'```\s*.*?\s*```', '', content, flags=re.DOTALL)
+    
+    # Remove ALL HTML tags aggressively - match any <...> pattern
+    content = re.sub(r'<[^>]+>', '', content, flags=re.DOTALL)
+    # Also remove any remaining < or > characters that might be part of broken HTML
+    content = re.sub(r'</?div[^>]*>', '', content, flags=re.DOTALL)
+    content = re.sub(r'</?span[^>]*>', '', content, flags=re.DOTALL)
+    
+    # Remove JSON-like structures if they appear
+    if content.strip().startswith('{') and content.strip().endswith('}'):
+        return "[JSON data - please regenerate itinerary]"
+    
+    # If content looks like HTML (contains multiple HTML-like patterns), reject it
+    if content.count('<') > 3 or content.count('class=') > 2:
+        return "[HTML content detected - please regenerate itinerary]"
+    
+    return content.strip()
 
 # Custom CSS for the Premium "Velura" Look
 st.markdown("""
@@ -401,9 +433,6 @@ if st.session_state.itinerary_data:
             <span style="color: #475569;">•</span>
             <div style="color: #94a3b8; font-size:0.85rem;">📍 {act.get('location')}</div>
         </div>
-        <a href="{map_url}" target="_blank" class="maps-link">
-            <img src="https://img.icons8.com/color/24/google-maps-new.png" width="16" style="margin-bottom: -3px;"/> View Location on Google Maps →
-        </a>
         {f'''
         <div class="transport-info">
             <div class="transport-header">
@@ -560,11 +589,16 @@ if st.session_state.itinerary_data:
             st.markdown('</div>', unsafe_allow_html=True)
 
     elif itinerary:
-        # Display standard text inside a premium card instead of a warning
+        # If itinerary exists but is not a dict, show a clean error message
         st.markdown(f"""
             <div class="premium-card">
-                <div class="trip-title" style="font-size: 2rem;">Your Bespoke Journey</div>
-                <div class="activity-description" style="margin-top:20px;">{get_content(itinerary)}</div>
+                <div class="trip-title" style="font-size: 2rem;">Itinerary Generation Issue</div>
+                <div class="activity-description" style="margin-top:20px;">
+                    We encountered an issue generating your structured itinerary. 
+                    Please click the <strong>RESET CONCIERGE</strong> button in the sidebar and try again.
+                    <br><br>
+                    If the issue persists, try adjusting your destination or preferences.
+                </div>
             </div>
         """, unsafe_allow_html=True)
     else:

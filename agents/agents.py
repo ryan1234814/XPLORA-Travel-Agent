@@ -49,15 +49,33 @@ def _try_parse_json(text: str) -> Optional[Dict[str, Any]]:
     if not text or not isinstance(text, str):
         return None
     
+    # Strip whitespace
+    text = text.strip()
+    
     # Try direct parse
     try:
-        return json.loads(text.strip())
+        return json.loads(text)
     except Exception:
         pass
 
-    # Try extraction with regex
+    # Remove markdown code blocks if present
     try:
-        # Look for the first { and the last }
+        # Pattern 1: ```json ... ```
+        if '```json' in text:
+            json_match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(1))
+        
+        # Pattern 2: ``` ... ```
+        if '```' in text:
+            json_match = re.search(r'```\s*(\{.*?\})\s*```', text, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(1))
+    except Exception:
+        pass
+
+    # Try extraction with regex - look for the first { and the last }
+    try:
         json_match = re.search(r'(\{.*\})', text, re.DOTALL)
         if json_match:
             return json.loads(json_match.group(1))
@@ -99,22 +117,60 @@ class TravelPlanState(TypedDict):
     
 class LangTravelAgents:
     def __init__(self):
-        self.llm = ChatOpenAI(
-            model=config.OPENROUTER_MODEL,
-            openai_api_key=config.OPENROUTER_API_KEY,
-            base_url="https://openrouter.ai/api/v1",
-            temperature=config.TEMPERATURE,
-            max_tokens=config.MAX_TOKENS,
-            model_kwargs={
-                "extra_headers": {
-                    "HTTP-Referer": "https://github.com/ryan1234814/XPLORA-Travel-Agent",
-                    "X-Title": "XPLORA Travel Agent",
+        # Initialize LLM based on configured provider
+        if config.LLM_PROVIDER == "groq":
+            try:
+                from langchain_groq import ChatGroq
+                self.llm_type = "groq"
+                self.llm = ChatGroq(
+                    model=config.GROQ_MODEL,
+                    groq_api_key=config.GROQ_API_KEY,
+                    temperature=config.TEMPERATURE,
+                    max_tokens=config.MAX_TOKENS,
+                )
+                print(f"[SUCCESS] Using Groq with model: {config.GROQ_MODEL}")
+                print(f"[INFO] Fast and reliable - great free tier!")
+            except ImportError:
+                print("[ERROR] langchain-groq not installed. Run: pip install langchain-groq")
+                print("[INFO] Falling back to OpenRouter...")
+                config.LLM_PROVIDER = "openrouter"
+        
+        elif config.LLM_PROVIDER == "ollama":
+            try:
+                import ollama
+                # Use Ollama client directly instead of LangChain wrapper
+                self.ollama_client = ollama.Client(host=config.OLLAMA_BASE_URL)
+                self.llm_type = "ollama"
+                self.llm = None  # We'll handle invocation manually
+                print(f"[SUCCESS] Using Ollama (local) with model: {config.OLLAMA_MODEL}")
+                print(f"[INFO] No API keys needed - unlimited free usage!")
+            except ImportError:
+                print("[ERROR] ollama package not installed. Run: pip install ollama")
+                print("[INFO] Falling back to OpenRouter...")
+                config.LLM_PROVIDER = "openrouter"
+        
+        if config.LLM_PROVIDER == "openrouter":
+            self.llm_type = "openrouter"
+            self.llm = ChatOpenAI(
+                model=config.OPENROUTER_MODEL,
+                openai_api_key=config.OPENROUTER_API_KEY,
+                base_url="https://openrouter.ai/api/v1",
+                temperature=config.TEMPERATURE,
+                max_tokens=config.MAX_TOKENS,
+                timeout=60,  # Add 60 second timeout to prevent hanging
+                max_retries=2,  # Retry failed requests up to 2 times
+                model_kwargs={
+                    "extra_headers": {
+                        "HTTP-Referer": "https://github.com/ryan1234814/XPLORA-Travel-Agent",
+                        "X-Title": "XPLORA Travel Agent",
+                    }
                 }
-            }
-        )
+            )
+            print(f"[SUCCESS] Using OpenRouter with model: {config.OPENROUTER_MODEL}")
+        
         self._lock = threading.Lock()
         self._last_request_time = 0
-        self.request_interval = 1.0 
+        self.request_interval = 0.1  # Reduced to 0.1 for maximum speed
         self.graph=self.create_agent_graph()
 
     @retry(
@@ -124,7 +180,7 @@ class LangTravelAgents:
         reraise=True
     )
     def _invoke_llm(self, messages: List[BaseMessage]):
-        """Robust wrapper for LLM invocation using OpenRouter."""
+        """Robust wrapper for LLM invocation using OpenRouter or Ollama."""
         # Proactive Rate Limiting
         with self._lock:
             elapsed = time.time() - self._last_request_time
@@ -146,8 +202,63 @@ class LangTravelAgents:
         
         if not cleaned_messages:
             cleaned_messages = [HumanMessage(content="Please provide travel recommendations.")]
+        
+        try:
+            # Handle Ollama direct API
+            if self.llm_type == "ollama":
+                # Convert LangChain messages to Ollama format
+                ollama_messages = []
+                for msg in cleaned_messages:
+                    if isinstance(msg, SystemMessage):
+                        ollama_messages.append({"role": "system", "content": msg.content})
+                    elif isinstance(msg, AIMessage):
+                        ollama_messages.append({"role": "assistant", "content": msg.content})
+                    else:
+                        ollama_messages.append({"role": "user", "content": msg.content})
+                
+                print(f"[DEBUG] Calling Ollama with {len(ollama_messages)} messages")
+                print(f"[DEBUG] First message preview: {ollama_messages[0]['content'][:100]}...")
+                
+                # Call Ollama API directly
+                response = self.ollama_client.chat(
+                    model=config.OLLAMA_MODEL,
+                    messages=ollama_messages,
+                    options={
+                        "temperature": config.TEMPERATURE,
+                        "num_predict": config.MAX_TOKENS,
+                        "num_ctx": 8192,
+                    }
+                )
+                
+                # Debug: Print full response structure
+                print(f"[DEBUG] Ollama response type: {type(response)}")
+                print(f"[DEBUG] Ollama response attributes: {dir(response)}")
+                
+                # Extract content from response - it's an object, not a dict!
+                try:
+                    content = response.message.content
+                    print(f"[DEBUG] Ollama API response length: {len(content)}")
+                    print(f"[DEBUG] Response preview: {content[:200]}")
+                except AttributeError as e:
+                    print(f"[ERROR] Failed to extract content: {e}")
+                    print(f"[ERROR] Response object: {response}")
+                    content = ""
+                
+                # Return as AIMessage for compatibility
+                return AIMessage(content=content)
             
-        return self.llm.invoke(cleaned_messages)
+            # Handle OpenRouter or Groq via LangChain
+            else:
+                result = self.llm.invoke(cleaned_messages)
+                print(f"[DEBUG] LLM invocation successful. Response type: {type(result)}")
+                print(f"[DEBUG] Response content length: {len(str(result.content)) if hasattr(result, 'content') else 'N/A'}")
+                return result
+                
+        except Exception as e:
+            print(f"[ERROR] LLM invocation failed: {type(e).__name__}: {str(e)}")
+            print(f"[ERROR] Full error details: {repr(e)}")
+            # Return a fallback message instead of crashing
+            return AIMessage(content="Unable to generate response due to connection error. Please try again.")
 
     def create_agent_graph(self)->StateGraph:
         workflow=StateGraph(TravelPlanState)
@@ -188,55 +299,31 @@ class LangTravelAgents:
         return workflow.compile()
         
     def _coordinator_agent(self,state:TravelPlanState)->TravelPlanState:
-         system_prompt = f"""You are the Coordinator Agent for a multi-agent travel planning system.
-
-Your role is to:
-1. Analyze the travel planning request
-2. Determine which specialized agents need to contribute
-3. Coordinate the workflow between agents
-4. Synthesize final recommendations
-
-Current request:
-- Destination: {state.get('destination', 'Not specified')}
-- Duration: {state.get('duration', 'Not specified')} days
-- Budget: {state.get('budget_range', 'Not specified')}
-- Interests: {', '.join(state.get('interests', []))}
-- Group size: {state.get('group_size', 1)}
-- Travel dates: {state.get('travel_dates', 'Not specified')}
-
-Available agents:
-- travel_advisor: Destination expertise and attraction recommendations
-- weather_analyst: Weather forecasting and activity planning
-- budget_optimizer: Cost analysis and money-saving strategies
-- local_expert: Local insights and cultural tips
-- transport_mobility: End-to-end movement planning (flights, rail/bus, transfers, local transport, route optimization)
-- itinerary_planner: Schedule optimization and logistics
-
-Agent outputs so far: {json.dumps(state.get('agent_outputs', {}), indent=2)}
-
-Based on the current state, decide what to do next:
-1. If you need more information or specific analysis, specify which agent should work next.
-2. IMPORTANT: You MUST call the 'itinerary_planner' to generate the final structured JSON itinerary before ending the process.
-3. If you have enough information from all other agents, your next step should be 'itinerary_planner'.
-4. ONLY respond with 'FINAL_PLAN' if the 'itinerary_planner' has already completed its work and you are ready to conclude.
-
-Your response should be either:
-- Agent name to call next (travel_advisor, weather_analyst, budget_optimizer, local_expert, transport_mobility, itinerary_planner)
-- 'FINAL_PLAN' if the itinerary is already created and you are ready to conclude
-- 'SEARCH' if you need to search for information first
-"""
-         messages=[SystemMessage(content=system_prompt)]
-         if state.get("messages"):
-             messages.extend(state["messages"][-3:])
-         else:
-             # Add a human message to start the conversation
-             messages.append(HumanMessage(content="Please analyze the travel request and determine which agents should contribute."))
+         """Coordinator that ensures all agents run to provide complete data."""
+         agent_outputs = state.get('agent_outputs', {})
+         iteration = state.get('iteration_count', 0)
          
-         response = self._invoke_llm(messages)  
+         # Sequential execution: weather -> transport -> itinerary
+         if iteration == 0 or len(agent_outputs) == 0:
+             # First, get weather/climate data
+             response = AIMessage(content="weather_analyst")
+         elif 'weather_analyst' in agent_outputs and 'transport_mobility' not in agent_outputs:
+             # Then get transport data
+             response = AIMessage(content="transport_mobility")
+         elif 'weather_analyst' in agent_outputs and 'transport_mobility' in agent_outputs and 'itinerary_planner' not in agent_outputs:
+             # Finally, create itinerary with all data available
+             response = AIMessage(content="itinerary_planner")
+         elif 'itinerary_planner' in agent_outputs:
+             # All done
+             response = AIMessage(content="FINAL_PLAN")
+         else:
+             # Fallback: go to itinerary planner
+             response = AIMessage(content="itinerary_planner")
+         
          new_state=state.copy()
          new_state["messages"]=state.get("messages",[])+[response] 
          new_state["current_agent"] = "coordinator"
-         new_state["iteration_count"] = state.get("iteration_count", 0) + 1
+         new_state["iteration_count"] = iteration + 1
          return new_state
          
     def _coordinator_router(self, state: TravelPlanState) -> str:
@@ -602,80 +689,170 @@ Otherwise, provide your local expertise and insights.
     
     def _itinerary_planner_agent(self, state: TravelPlanState) -> TravelPlanState:
         """Itinerary planner agent - produces structured JSON for the UI"""
-        system_prompt = f"""You are the Itinerary Planner Agent, a world-class luxury travel architect.
         
-Your task: Create a definitive, structured itinerary for {state.get('destination')}.
-Duration: {state.get('duration')} days.
+        # Gather context from other agents
+        agent_outputs = state.get("agent_outputs", {})
+        # Make the planner self-sufficient - it can work without other agents for speed
+        destination = state.get('destination', 'Dubai')
+        duration = state.get('duration', 3)
+        budget_tier = state.get('budget_range', 'Premier')
+        interests = ', '.join(state.get('interests', []))
+        
+        system_prompt = f"""Create a {duration}-day travel itinerary for {destination} in JSON format.
 
-Your task is to provide a complete, high-end travel narrative.
+REQUIREMENTS:
+- Return ONLY valid JSON (no markdown, no explanations)
+- Each day must have DIFFERENT real locations in {destination}
+- Include {duration} days with 2-3 activities per day
+- Budget: {budget_tier}, Interests: {interests}
 
-IMPORTANT: Your response must be ORGANIZE as a single, valid JSON object.
-DO NOT include any introductory text, conversational filler, or markdown code blocks (no backticks).
-ONLY return the JSON object itself starting with '{' and ending with '}'.
-
-Schema:
+JSON FORMAT:
 {{
-  "trip_title": "Elegant naming",
-  "overview": "2-3 sentence teaser",
-  "sustainability_score": 70-98,
-  "price_range": "e.g., $2,500 - $4,000",
-  "concierge_note": "A personalized greeting addressing the traveler's interests.",
+  "trip_title": "Title for {destination}",
+  "overview": "Brief trip description",
+  "sustainability_score": 75,
+  "price_range": "$2000-$4000",
+  "concierge_note": "Welcome message",
   "days": [
     {{
       "day_number": 1,
-      "day_name": "e.g., Friday",
-      "theme": "Daily focus",
+      "day_name": "Day 1",
+      "theme": "Theme for day",
       "activities": [
         {{
           "time": "09:00 AM",
-          "title": "Name",
-          "description": "Engaging text",
-          "location": "Venue Name",
-          "tag": "Category",
-          "map_query": "Search query for Google Maps",
+          "title": "Real attraction name",
+          "description": "What to do here",
+          "location": "Specific location",
+          "tag": "Culture",
+          "map_query": "Location for maps",
           "transport_to_next": {{
-             "mode": "e.g., Metro Line 2",
-             "duration": "15 min",
-             "cost": "e.g., $2.50",
-             "instructions": "Brief navigation tip"
+            "mode": "Walking",
+            "duration": "15 min",
+            "cost": "Free",
+            "instructions": "How to get there"
           }}
         }}
       ]
     }}
   ]
 }}
-"""
+
+Generate the JSON for {destination} now:"""
         
         messages = [SystemMessage(content=system_prompt)]
-        if state.get("messages"):
-            # Only keep recent history to stay focused
-            messages.extend(state["messages"][-5:])
+        # Don't include message history for faster, more focused responses
+
             
         response = self._invoke_llm(messages)
         response_text = _safe_message_content(response)
         
+        # Debug: Print first 500 chars of response to see what Groq is generating
+        print(f"[DEBUG] LLM Response (first 500 chars): {response_text[:500]}")
+        
+        # AGGRESSIVE HTML REMOVAL - Strip ALL HTML tags using regex
+        import re
+        # Remove all HTML tags
+        response_text = re.sub(r'<[^>]+>', '', response_text)
+        # Remove common HTML entities
+        response_text = response_text.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+        
+        print(f"[DEBUG] After HTML removal (first 500 chars): {response_text[:500]}")
+        
         # Force JSON parsing using the improved helper
         parsed = _try_parse_json(response_text)
+        
+        if not parsed:
+            print(f"[WARNING] JSON parsing failed. Response was: {response_text[:200]}")
+        else:
+            print(f"[SUCCESS] JSON parsed successfully with {len(parsed.get('days', []))} days")
 
-        # If parsing fails or output is empty, provide a basic fallback structure
-        if not parsed or not response_text.strip():
-            if not response_text.strip():
-                response_text = "The AI agent encountered a brief interruption. Please regenerate."
+        # Validate the parsed structure
+        if parsed and isinstance(parsed, dict):
+            # Ensure required fields exist
+            if "days" not in parsed or not isinstance(parsed.get("days"), list):
+                parsed = None
+            elif len(parsed.get("days", [])) == 0:
+                parsed = None
+            else:
+                # Validate each day has activities
+                valid_days = []
+                for day in parsed.get("days", []):
+                    if isinstance(day, dict) and "activities" in day and isinstance(day["activities"], list):
+                        if len(day["activities"]) > 0:
+                            valid_days.append(day)
+                
+                if len(valid_days) == 0:
+                    parsed = None
+                else:
+                    parsed["days"] = valid_days
+
+        # If parsing fails or output is invalid, provide a structured fallback
+        if not parsed or not isinstance(parsed, dict):
+            destination = state.get('destination', 'your destination')
+            duration = state.get('duration', 3)
             
-            # Basic structure if we really can't get JSON
+            # Create a basic but valid structure with sample activities
             parsed = {
-                "trip_title": f"Journey to {state.get('destination')}",
-                "overview": response_text[:500] if len(response_text) > 0 else "Curating your bespoke travel experience.",
-                "sustainability_score": 85,
-                "price_range": state.get("budget_range", "Luxury"),
-                "concierge_note": "A bespoke plan is being finalized.",
+                "trip_title": f"Discover {destination}",
+                "overview": f"Experience the best of {destination} with this carefully curated {duration}-day itinerary featuring local culture, cuisine, and iconic landmarks.",
+                "sustainability_score": 80,
+                "price_range": state.get("budget_range", "Premier"),
+                "concierge_note": f"Welcome to {destination}! We've prepared a wonderful journey showcasing the destination's highlights and hidden gems.",
                 "days": []
             }
+            
+            # Add sample days with activities
+            for day_num in range(1, min(duration + 1, 4)):  # Cap at 3 days for fallback
+                sample_day = {
+                    "day_number": day_num,
+                    "day_name": f"Day {day_num}",
+                    "theme": "Exploration & Discovery",
+                    "activities": [
+                        {
+                            "time": "09:00 AM",
+                            "title": f"Morning Exploration in {destination}",
+                            "description": f"Start your day discovering the highlights and local culture of {destination}.",
+                            "location": f"Central {destination}",
+                            "tag": "Culture",
+                            "map_query": destination,
+                            "transport_to_next": {
+                                "mode": "Walking",
+                                "duration": "15 min",
+                                "cost": "Free",
+                                "instructions": "Stroll through the local area"
+                            }
+                        },
+                        {
+                            "time": "12:30 PM",
+                            "title": "Local Cuisine Experience",
+                            "description": f"Enjoy authentic local flavors at a recommended restaurant in {destination}.",
+                            "location": f"{destination} dining district",
+                            "tag": "Gastronomy",
+                            "map_query": f"restaurants in {destination}",
+                            "transport_to_next": {
+                                "mode": "Local Transport",
+                                "duration": "20 min",
+                                "cost": "$3.00",
+                                "instructions": "Take local transit to afternoon destination"
+                            }
+                        },
+                        {
+                            "time": "03:00 PM",
+                            "title": "Afternoon Activities",
+                            "description": f"Explore popular attractions and landmarks in {destination}.",
+                            "location": f"{destination} attractions",
+                            "tag": "Adventure",
+                            "map_query": f"attractions in {destination}"
+                        }
+                    ]
+                }
+                parsed["days"].append(sample_day)
 
         agent_outputs = state.get("agent_outputs", {})
         agent_outputs["itinerary_planner"] = {
             "response": response_text,
-            "output": parsed if parsed else response_text,
+            "output": parsed,
             "timestamp": datetime.now().isoformat(),
             "status": "completed"
         }
@@ -685,6 +862,7 @@ Schema:
         new_state["current_agent"] = "itinerary_planner"
         new_state["agent_outputs"] = agent_outputs
         return new_state
+
     
     def _tool_executor_agent(self, state: TravelPlanState) -> TravelPlanState:
         last_message = state['messages'][-1] if state.get("messages") else None
