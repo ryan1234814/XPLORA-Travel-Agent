@@ -1,3 +1,6 @@
+# System Architecture
+
+```mermaid
 graph TB
     subgraph "Frontend Layer"
         UI[Streamlit UI<br/>Velura Interface]
@@ -119,3 +122,4 @@ graph TB
     COORD -.->|Flow Control| ROUTER
     EXEC -.->|NEED_SEARCH| DDG
     AGENTS -.->|Return to| COORD
+```

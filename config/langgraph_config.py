@@ -57,10 +57,16 @@ class LangGraphConfig:
         @classmethod
         def validate_config(cls) -> bool:
             """Validate configuration"""
-            cls.OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-            if not cls.OPENROUTER_API_KEY:
-                print("[WARNING] OPENROUTER_API_KEY not found in environment variables")
-                return False
+            if cls.LLM_PROVIDER == "groq":
+                cls.GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+                if not cls.GROQ_API_KEY:
+                    print("[WARNING] GROQ_API_KEY not found in environment variables")
+                    return False
+            elif cls.LLM_PROVIDER == "openrouter":
+                cls.OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+                if not cls.OPENROUTER_API_KEY:
+                    print("[WARNING] OPENROUTER_API_KEY not found in environment variables")
+                    return False
             return True
 
 # Initialize configuration

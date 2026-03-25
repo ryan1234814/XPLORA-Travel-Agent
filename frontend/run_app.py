@@ -12,7 +12,7 @@ def run_services():
     print("🚀 Starting XPLORA Premium Concierge...")
 
     # Use the Python binary with all dependencies
-    python_path = "/usr/local/bin/python3"
+    python_path = sys.executable
 
     # 1. Start FastAPI Backend
     print("📡 Initializing Backend API (FastAPI)...")
