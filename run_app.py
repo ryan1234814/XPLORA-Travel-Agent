@@ -7,7 +7,7 @@ import signal
 def run_services():
     # Base path
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    client_dir = os.path.join(base_dir, "client")
+    client_dir = os.path.join(base_dir, "frontend", "client")
 
     print("🚀 Starting XPLORA Premium Concierge...")
 
@@ -17,7 +17,7 @@ def run_services():
     # 1. Start FastAPI Backend
     print("📡 Initializing Backend API (FastAPI)...")
     backend_proc = subprocess.Popen(
-        [python_path, "-m", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"],
+        [python_path, "-m", "uvicorn", "backend.api:app", "--host", "0.0.0.0", "--port", "8000"],
         cwd=base_dir,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

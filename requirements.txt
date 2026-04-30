@@ -13,3 +13,4 @@ requests
 streamlit
 tenacity
 uvicorn
+mysql-connector-python

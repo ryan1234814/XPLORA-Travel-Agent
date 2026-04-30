@@ -9,10 +9,10 @@ import re
 from datetime import datetime
 import pandas as pd
 
-# Add parent directory to path to import agents and config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.agents import LangTravelAgents, TravelPlanState
+from db.database import save_itinerary
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 # Page Configuration
@@ -345,6 +345,17 @@ if generate_btn:
                     final_state = list(event.values())[0]
 
                 st.session_state.itinerary_data = final_state.get("agent_outputs", {})
+
+                # Store in MySQL database
+                save_itinerary(
+                    origin, 
+                    destination, 
+                    duration, 
+                    budget, 
+                    interests, 
+                    st.session_state.itinerary_data
+                )
+
                 st.rerun()
             except Exception as e:
                 error_msg = str(e)

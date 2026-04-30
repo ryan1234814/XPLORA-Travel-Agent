@@ -5,11 +5,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import json
+import mysql.connector
+from dotenv import load_dotenv
+load_dotenv()
 
-# Add parent directory to path to import agents and config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.agents import LangTravelAgents, TravelPlanState
+from db.database import save_itinerary
 
 app = FastAPI()
 
@@ -55,6 +58,16 @@ async def generate_itinerary(req: PlanRequest):
         
         # Extract the results from agent_outputs
         itinerary_data = final_state.get("agent_outputs", {})
+        
+        # Store in MySQL database
+        save_itinerary(
+            req.origin, 
+            req.destination, 
+            req.duration, 
+            req.budget, 
+            req.interests, 
+            itinerary_data
+        )
         
         # Clean the output (some components might return strings instead of dicts)
         # We can use the logic from the streamlit app for robust parsing but the invoke already handled most of it

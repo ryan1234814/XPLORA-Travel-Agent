@@ -130,6 +130,24 @@ class LangTravelAgents:
                 )
                 print(f"[SUCCESS] Using Groq with model: {config.GROQ_MODEL}")
                 print(f"[INFO] Fast and reliable - great free tier!")
+                
+                # Initialize OpenRouter as fallback
+                self.fallback_llm = ChatOpenAI(
+                    model=config.OPENROUTER_MODEL,
+                    openai_api_key=config.OPENROUTER_API_KEY,
+                    base_url="https://openrouter.ai/api/v1",
+                    temperature=config.TEMPERATURE,
+                    max_tokens=config.MAX_TOKENS,
+                    timeout=60,
+                    max_retries=2,
+                    model_kwargs={
+                        "extra_headers": {
+                            "HTTP-Referer": "https://github.com/ryan1234814/XPLORA-Travel-Agent",
+                            "X-Title": "XPLORA Travel Agent",
+                        }
+                    }
+                )
+                print("[INFO] Initialized OpenRouter as fallback LLM.")
             except ImportError:
                 print("[ERROR] langchain-groq not installed. Run: pip install langchain-groq")
                 print("[INFO] Falling back to OpenRouter...")
@@ -166,6 +184,7 @@ class LangTravelAgents:
                     }
                 }
             )
+            self.fallback_llm = None
             print(f"[SUCCESS] Using OpenRouter with model: {config.OPENROUTER_MODEL}")
         
         self._lock = threading.Lock()
@@ -249,10 +268,18 @@ class LangTravelAgents:
             
             # Handle OpenRouter or Groq via LangChain
             else:
-                result = self.llm.invoke(cleaned_messages)
-                print(f"[DEBUG] LLM invocation successful. Response type: {type(result)}")
-                print(f"[DEBUG] Response content length: {len(str(result.content)) if hasattr(result, 'content') else 'N/A'}")
-                return result
+                try:
+                    result = self.llm.invoke(cleaned_messages)
+                    print(f"[DEBUG] LLM invocation successful. Response type: {type(result)}")
+                    print(f"[DEBUG] Response content length: {len(str(result.content)) if hasattr(result, 'content') else 'N/A'}")
+                    return result
+                except Exception as llm_err:
+                    if self.llm_type == "groq" and hasattr(self, "fallback_llm") and self.fallback_llm:
+                        print(f"[WARNING] Groq invocation failed ({str(llm_err)}). Falling back to OpenRouter...")
+                        fallback_result = self.fallback_llm.invoke(cleaned_messages)
+                        print(f"[DEBUG] OpenRouter fallback successful.")
+                        return fallback_result
+                    raise llm_err
                 
         except Exception as e:
             print(f"[ERROR] LLM invocation failed: {type(e).__name__}: {str(e)}")
