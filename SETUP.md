@@ -6,7 +6,7 @@ This guide explains how to start the XPLORA Travel Agent locally. The project co
 
 The project has been organized into specific directories for clarity:
 - `backend/`: Contains the FastAPI application logic (`api.py`).
-- `frontend/`: Contains the Streamlit app (`app_streamlit.py`) and the React UI (`client/`).
+- `frontend/`: Contains the React UI (`client/`).
 - `db/`: Contains the MySQL database configuration and models (`database.py`).
 - `config/`: Configuration files for APIs and LLM behavior.
 - `agents/`: LangGraph agents and external tools logic.

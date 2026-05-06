@@ -98,7 +98,8 @@ from agents.tools.travel import (
     search_budget_info,
     search_local_transport_options,
     search_car_rentals,
-    search_real_time_transit_info
+    search_real_time_transit_info,
+    search_travel_blogs
 )
 
 class TravelPlanState(TypedDict):
@@ -425,34 +426,32 @@ If you have already received search results in the conversation history, proceed
         return new_state
 
     def _weather_analyst_agent(self, state: TravelPlanState) -> TravelPlanState:
-        # 1. Try real-time weather from OpenWeather when available.
+        # 1. Try real-time weather from Tomorrow.io when available.
         try:
-            if api_config.OPENWEATHER_API_KEY and state.get('destination'):
+            if api_config.TOMORROW_IO_API_KEY and state.get('destination'):
                 params = {
-                    "q": state.get('destination'),
-                    "appid": api_config.OPENWEATHER_API_KEY,
-                    "units": "metric"
+                    "location": state.get('destination'),
+                    "apikey": api_config.TOMORROW_IO_API_KEY
                 }
-                resp = requests.get(f"{api_config.WEATHER_BASE_URL}/weather", params=params, timeout=15)
+                resp = requests.get(f"{api_config.WEATHER_BASE_URL}/realtime", params=params, timeout=15)
                 if resp.status_code == 200:
                     data = resp.json() or {}
-                    main = data.get("main", {}) or {}
-                    weather = (data.get("weather") or [{}])[0] or {}
+                    values = data.get("data", {}).get("values", {})
                     
                     parsed = {
-                        "destination": data.get("name") or state.get('destination'),
+                        "destination": state.get('destination'),
                         "travel_dates": state.get('travel_dates'),
                         "temperature_c": {
-                            "expected_low": main.get("temp_min"),
-                            "expected_high": main.get("temp_max"),
-                            "typical_range": f"{main.get('temp_min', 'N/A')}–{main.get('temp_max', 'N/A')}°C",
-                            "notes": f"Current: {main.get('temp')}°C ({weather.get('description')})"
+                            "expected_low": values.get("temperature"),
+                            "expected_high": values.get("temperature"),
+                            "typical_range": f"{values.get('temperature', 'N/A')}°C",
+                            "notes": f"Current: {values.get('temperature')}°C (Apparent: {values.get('temperatureApparent')}°C)"
                         },
-                        "conditions_summary": weather.get("description") or "",
+                        "conditions_summary": f"Cloud cover: {values.get('cloudCover')}%, Wind: {values.get('windSpeed')} m/s",
                         "best_times": ["Morning exploration", "Evening walk"],
-                        "activity_suggestions": [f"Outdoor activities are ideal given {weather.get('description')}"],
-                        "packing": ["Standard travel wear"],
-                        "source": "openweather"
+                        "activity_suggestions": ["Standard activities based on current conditions"],
+                        "packing": ["Standard travel wear based on temperature"],
+                        "source": "tomorrow_io"
                     }
 
                     agent_outputs = state.get("agent_outputs", {})
@@ -925,6 +924,8 @@ Generate the JSON for {destination} now:"""
                     tool_result = search_real_time_transit_info.invoke({"destination": search_query})
                 elif "transport" in search_query_lower or "metro" in search_query_lower or "taxi" in search_query_lower:
                     tool_result = search_local_transport_options.invoke({"destination": search_query})
+                elif "blog" in search_query_lower or "guide" in search_query_lower or "rag" in search_query_lower:
+                    tool_result = search_travel_blogs.invoke({"query": search_query})
                 else:
                     tool_result = search_destination_info.invoke(search_query)
                 

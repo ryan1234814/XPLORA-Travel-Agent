@@ -44,26 +44,24 @@ def search_destination_info(query: str):
 def search_weather_info(destination: str, dates: str = "") -> str:
     """Search for current weather information and forecasts for a destination."""
     try:
-        # Try OpenWeather API first if key exists and no specific dates are requested (current weather)
-        if api_config.OPENWEATHER_API_KEY and not dates:
+        # Try Tomorrow.io API first if key exists and no specific dates are requested (current weather)
+        if api_config.TOMORROW_IO_API_KEY and not dates:
             try:
                 params = {
-                    "q": destination,
-                    "appid": api_config.OPENWEATHER_API_KEY,
-                    "units": "metric"
+                    "location": destination,
+                    "apikey": api_config.TOMORROW_IO_API_KEY
                 }
-                response = requests.get(f"{api_config.WEATHER_BASE_URL}/weather", params=params)
+                response = requests.get(f"{api_config.WEATHER_BASE_URL}/realtime", params=params)
                 if response.status_code == 200:
                     data = response.json()
-                    main = data.get("main", {})
-                    weather = data.get("weather", [{}])[0]
-                    return (f"Current Weather in {data.get('name')}:\n"
-                            f"Temperature: {main.get('temp')}°C (Feels like {main.get('feels_like')}°C)\n"
-                            f"Conditions: {weather.get('description')}\n"
-                            f"Humidity: {main.get('humidity')}%\n"
-                            f"Wind Speed: {data.get('wind', {}).get('speed')} m/s")
+                    values = data.get("data", {}).get("values", {})
+                    return (f"Current Weather in {destination}:\n"
+                            f"Temperature: {values.get('temperature')}°C (Apparent: {values.get('temperatureApparent')}°C)\n"
+                            f"Humidity: {values.get('humidity')}%\n"
+                            f"Wind Speed: {values.get('windSpeed')} m/s\n"
+                            f"Cloud Cover: {values.get('cloudCover')}%")
             except Exception as api_err:
-                print(f"OpenWeather API error: {api_err}")
+                print(f"Tomorrow.io API error: {api_err}")
 
         # Fallback to DuckDuckGo search
         weather_query = f"{destination} weather forecast {dates} travel climate"
@@ -452,6 +450,15 @@ def build_google_maps_directions_link(stops: List[str]) -> str:
     except Exception:
         return ""
 
+@tool
+def search_travel_blogs(query: str) -> str:
+    """Search the internal Vector Database (Pinecone) for scraped travel blogs, guides, and richer recommendations."""
+    try:
+        from db.rag import rag_db
+        return rag_db.query(query, k=3)
+    except Exception as e:
+        return f"Error searching travel knowledge base: {str(e)}"
+
 # Export all tools in a single list
 ALL_TOOLS = [
     search_destination_info,
@@ -468,5 +475,6 @@ ALL_TOOLS = [
     build_google_maps_directions_link,
     search_local_transport_options,
     search_car_rentals,
-    search_real_time_transit_info
+    search_real_time_transit_info,
+    search_travel_blogs
 ]

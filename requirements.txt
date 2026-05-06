@@ -10,7 +10,10 @@ pandas
 pydantic
 python-dotenv
 requests
-streamlit
 tenacity
 uvicorn
 mysql-connector-python
+pinecone-client
+langchain-pinecone
+sentence-transformers
+langchain-huggingface

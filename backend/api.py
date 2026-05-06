@@ -70,7 +70,7 @@ async def generate_itinerary(req: PlanRequest):
         )
         
         # Clean the output (some components might return strings instead of dicts)
-        # We can use the logic from the streamlit app for robust parsing but the invoke already handled most of it
+        # The invoke function handles most of the robust parsing
         
         return itinerary_data
 

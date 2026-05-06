@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Diamond,
   MapPin,
@@ -137,6 +137,7 @@ function App() {
       });
 
       const data = response.data;
+      console.log('[DEBUG] Full API response keys:', Object.keys(data));
 
       const parseField = (field: any) => {
         if (!field) return null;
@@ -152,9 +153,31 @@ function App() {
         return obj;
       };
 
+      // Parse weather with extra robustness
+      const rawWeather = data.weather_analyst;
+      console.log('[DEBUG] Raw weather_analyst:', JSON.stringify(rawWeather).substring(0, 300));
+      let parsedWeather = parseField(rawWeather);
+      // If parseField returned a string (e.g. from response field), try to parse JSON from it
+      if (typeof parsedWeather === 'string') {
+        try {
+          const match = parsedWeather.match(/\{[\s\S]*\}/);
+          if (match) parsedWeather = JSON.parse(match[0]);
+        } catch (e) { /* keep as string */ }
+      }
+      // Fallback: if output didn't have temperature_c, try parsing the response field
+      if (parsedWeather && typeof parsedWeather === 'object' && !parsedWeather.temperature_c && rawWeather?.response) {
+        try {
+          const fromResponse = JSON.parse(rawWeather.response);
+          if (fromResponse.temperature_c) {
+            parsedWeather = fromResponse;
+          }
+        } catch (e) { /* ignore */ }
+      }
+      console.log('[DEBUG] Parsed weather:', JSON.stringify(parsedWeather).substring(0, 300));
+
       setItinerary(parseField(data.itinerary_planner));
       setMobility(parseField(data.transport_mobility));
-      setWeather(parseField(data.weather_analyst));
+      setWeather(parsedWeather);
       setLocalExpert(parseField(data.local_expert));
 
       setActiveTab(0);
@@ -613,17 +636,21 @@ function App() {
                       {weather ? (
                         <div className="space-y-8 relative z-10">
                           <div className="flex items-center gap-4">
-                            <div className="text-5xl font-bold text-white tracking-tighter">{weather.temperature_c?.expected_high}°C</div>
+                            <div className="text-5xl font-bold text-white tracking-tighter">
+                              {weather.temperature_c?.expected_high != null
+                                ? `${Math.round(weather.temperature_c.expected_high)}°C`
+                                : 'N/A'}
+                            </div>
                             <div className="h-10 w-[1px] bg-white/10"></div>
                             <div className="text-xs font-bold text-slate-500 uppercase">High Peak<br />Expected</div>
                           </div>
                           <div className="space-y-4">
                             <div className="flex items-center gap-2 p-3 bg-white/5 rounded-xl border border-white/5 group-hover:border-amber-400/20 transition-all">
                               <div className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_10px_#fbbf24]"></div>
-                              <span className="text-xs font-bold text-slate-300 uppercase underline-offset-4 underline decoration-amber-400/30">{weather.conditions_summary}</span>
+                              <span className="text-xs font-bold text-slate-300 uppercase underline-offset-4 underline decoration-amber-400/30">{weather.conditions_summary || 'Conditions data pending'}</span>
                             </div>
                             <p className="text-xs font-medium text-slate-500 leading-relaxed font-outfit px-1 italic">
-                              "{weather.temperature_c?.notes || "Environmental conditions are optimized for your selected itinerary themes."}"
+                              "{weather.temperature_c?.notes || weather.conditions_summary || "Environmental conditions are optimized for your selected itinerary themes."}"
                             </p>
                           </div>
                         </div>
