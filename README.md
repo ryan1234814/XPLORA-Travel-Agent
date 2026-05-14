@@ -1,26 +1,73 @@
-# XPLORA Premium Travel Concierge ✨
+# React + TypeScript + Vite
 
-XPLORA is an elite, autonomous AI-powered travel agent that curates highly personalized, premium travel itineraries. Powered by LangGraph's multi-agent architecture and the versatile Groq LLaMA 3.3 model, XPLORA provides end-to-end travel planning with exceptional attention to detail.
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## 🌟 Features
+Currently, two official plugins are available:
 
-- **Multi-Agent Architecture**: Uses specialized AI agents (Travel Advisor, Weather Analyst, Budget Optimizer, Local Expert, Transport & Mobility) working in harmony.
-- **Real-Time Data**: Integrates with DuckDuckGo Search and OpenWeather API to provide up-to-date information on flights, hotels, attractions, and local weather.
-- **Premium User Experience**: A high-end, bespoke React frontend (Velura) designed to feel like an exclusive concierge service.
-- **Sustainability & Budget Tiers**: Tailors trips based on budget tiers (Essential, Premier, Elite, Legendary) and sustainability focus.
-- **Interactive Itineraries**: Generates structured daily plans with integrated Google Maps links and mobility cost/time estimates.
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
 
-## 🚀 Technology Stack
+## React Compiler
 
-- **Backend**: Python, FastAPI, LangChain, LangGraph, Uvicorn
-- **AI Models**: Groq (LLaMA 3.3 70B Versatile) for lightning-fast orchestration (supports OpenRouter and Ollama as fallbacks)
-- **Frontend**: React, Vite, Tailwind CSS, Framer Motion, Lucide React
-- **Tools**: Requests, Tenacity, Pydantic, Pandas
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-## 📚 Documentation
+## Expanding the ESLint configuration
 
-- [Setup Guide](SETUP.md) - Instructions for running the project locally.
-- [Architecture](architecture_diagram.md) - High-level system design and multi-agent workflow.
+If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
 
-## 🤝 Contributing
-Contributions are welcome! Please feel free to submit a Pull Request.
+```js
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+
+      // Remove tseslint.configs.recommended and replace with this
+      tseslint.configs.recommendedTypeChecked,
+      // Alternatively, use this for stricter rules
+      tseslint.configs.strictTypeChecked,
+      // Optionally, add this for stylistic rules
+      tseslint.configs.stylisticTypeChecked,
+
+      // Other configs...
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
+```
+
+You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+
+```js
+// eslint.config.js
+import reactX from 'eslint-plugin-react-x'
+import reactDom from 'eslint-plugin-react-dom'
+
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+      // Enable lint rules for React
+      reactX.configs['recommended-typescript'],
+      // Enable lint rules for React DOM
+      reactDom.configs.recommended,
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
+```

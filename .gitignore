@@ -3,3 +3,4 @@ __pycache__/
 test_results_*.txt
 .env
 .claude/
+node_modules

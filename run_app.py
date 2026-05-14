@@ -7,7 +7,7 @@ import signal
 def run_services():
     # Base path
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    client_dir = os.path.join(base_dir, "frontend", "client")
+    client_dir = base_dir
 
     print("🚀 Starting XPLORA Premium Concierge...")
 
