@@ -469,7 +469,7 @@ If you have already received search results in the conversation history, proceed
         except Exception:
             pass
 
-        # 2. Check if we have search results already
+        
         agent_outputs = state.get("agent_outputs", {})
         search_results = agent_outputs.get("weather_analyst", {}).get("search_results")
         

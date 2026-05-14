@@ -31,7 +31,7 @@ class PlanRequest(BaseModel):
     budget: str = "Premier"
     interests: List[str] = ["Wellness", "Gastronomy"]
 
-@app.post("/generate-itinerary")
+@app.post("/api/generate-itinerary")
 async def generate_itinerary(req: PlanRequest):
     try:
         agent_system = LangTravelAgents()

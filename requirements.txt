@@ -15,5 +15,3 @@ uvicorn
 mysql-connector-python
 pinecone-client
 langchain-pinecone
-sentence-transformers
-langchain-huggingface

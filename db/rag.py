@@ -1,6 +1,11 @@
 import os
 from typing import List, Dict, Any, Optional
-from langchain_huggingface import HuggingFaceEmbeddings
+try:
+    from langchain_huggingface import HuggingFaceEmbeddings
+    HUGGINGFACE_AVAILABLE = True
+except ImportError:
+    HUGGINGFACE_AVAILABLE = False
+
 try:
     from langchain_pinecone import PineconeVectorStore
     from pinecone import Pinecone, ServerlessSpec
@@ -23,7 +28,7 @@ class TravelRAG:
     def __init__(self):
         self.api_key = api_config.PINECONE_API_KEY
         self.index_name = api_config.PINECONE_INDEX_NAME or "travel-guides"
-        self.embeddings = HuggingFaceEmbeddings(model_name=EMBEDDINGS_MODEL)
+        self.embeddings = HuggingFaceEmbeddings(model_name=EMBEDDINGS_MODEL) if HUGGINGFACE_AVAILABLE else None
         self.vectorstore = None
         
         # In-memory fallback if Pinecone API key is not configured
@@ -33,7 +38,7 @@ class TravelRAG:
             {"page_content": "A hidden gem in Rome is the Trastevere neighborhood. Great local food and less crowded than the Colosseum area.", "metadata": {"source": "blog", "destination": "Rome"}}
         ]
         
-        self.is_mock = not bool(self.api_key)
+        self.is_mock = not bool(self.api_key) or not HUGGINGFACE_AVAILABLE or not PINECONE_AVAILABLE
         
         if not self.is_mock:
             try:
