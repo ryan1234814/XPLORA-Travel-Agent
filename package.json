@@ -1,0 +1,8 @@
+{
+  "name": "xplora-travel-agent",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "cd frontend/client && npm install && npm run build"
+  }
+}
