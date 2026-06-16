@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: xplora-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.api:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: MAIN_MODEL_PROVIDER
+        value: groq
+      - key: GROQ_API_KEY
+        sync: true
+      - key: OPENROUTER_API_KEY
+        sync: true
+      - key: TOMORROW_IO_API_KEY
+        sync: true
+      - key: SCRAPEGRAPH_API_KEY
+        sync: true
+      - key: MYSQL_HOST
+        sync: true
+      - key: MYSQL_USER
+        sync: true
+      - key: MYSQL_PASSWORD
+        sync: true
+      - key: MYSQL_DATABASE
+        sync: true
+      - key: MYSQL_PORT
+        value: "3306"
