@@ -25,7 +25,8 @@ import {
   Zap,
   Award,
   ShieldCheck,
-  Info
+  Info,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
@@ -106,7 +107,8 @@ function App() {
   const [itinerary, setItinerary] = useState<ItineraryData | null>(null);
   const [mobility, setMobility] = useState<MobilityData | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
-  const [localExpert, setLocalExpert] = useState<string | null>(null);
+  const [localExpert, setLocalExpert] = useState<any>(null);
+  const [isIntelligenceOpen, setIsIntelligenceOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [expandedMobility, setExpandedMobility] = useState<string | null>(null);
@@ -673,12 +675,17 @@ function App() {
                         <div className="text-4xl text-primary opacity-20 font-serif absolute -top-4 -left-2 italic">"</div>
                         <p className="text-slate-300 text-sm leading-[1.8] mb-8 font-light italic relative z-10">
                           {localExpert ? (
-                            localExpert.length > 350 ? localExpert.substring(0, 350) + "..." : localExpert
+                            typeof localExpert === 'string' 
+                              ? (localExpert.length > 350 ? localExpert.substring(0, 350) + "..." : localExpert)
+                              : (localExpert.summary ? (localExpert.summary.length > 350 ? localExpert.summary.substring(0, 350) + "..." : localExpert.summary) : "Loading...")
                           ) : (
                             "We are gathering contemporary cultural nuances and heritage secrets for this specific destination to enhance your perspective."
                           )}
                         </p>
-                        <button className="w-full py-4 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-slate-400 flex items-center justify-center gap-2 hover:bg-white/10 hover:text-white transition-all uppercase tracking-widest">
+                        <button 
+                          onClick={() => setIsIntelligenceOpen(true)}
+                          className="w-full py-4 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-slate-400 flex items-center justify-center gap-2 hover:bg-white/10 hover:text-white transition-all uppercase tracking-widest cursor-pointer"
+                        >
                           EXPAND INTELLIGENCE <ChevronRight className="w-3 h-3 text-primary" />
                         </button>
                       </div>
@@ -789,6 +796,206 @@ function App() {
                 </div>
               </motion.div>
             ) : null}
+          </AnimatePresence>
+
+          {/* Premium Cultural Intelligence Modal */}
+          <AnimatePresence>
+            {isIntelligenceOpen && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md"
+              >
+                <motion.div
+                  initial={{ scale: 0.95, y: 20, opacity: 0 }}
+                  animate={{ scale: 1, y: 0, opacity: 1 }}
+                  exit={{ scale: 0.95, y: 20, opacity: 0 }}
+                  transition={{ type: 'spring', damping: 25, stiffness: 250 }}
+                  className="relative w-full max-w-4xl max-h-[85vh] overflow-y-auto glass-card border border-white/10 p-8 md:p-12 shadow-[0_0_50px_rgba(164,140,244,0.15)] flex flex-col gap-8 custom-scrollbar text-left"
+                >
+                  {/* Header */}
+                  <div className="flex justify-between items-start gap-4">
+                    <div>
+                      <span className="text-[10px] font-bold text-primary tracking-[0.3em] uppercase">Deep Intelligence Brief</span>
+                      <h2 className="text-2xl md:text-3xl font-extrabold text-white mt-1 tracking-tight">
+                        {destination || "Destination"} Living Identity
+                      </h2>
+                    </div>
+                    <button 
+                      onClick={() => setIsIntelligenceOpen(false)}
+                      className="p-2 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Content summary */}
+                  <p className="text-slate-300 text-sm md:text-base leading-relaxed italic border-l-2 border-primary/40 pl-4 py-1">
+                    "{localExpert?.summary || "Deep heritage insights pending synch."}"
+                  </p>
+
+                  {/* Grid of details */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    {/* Contemporary Behaviors */}
+                    <div className="p-6 bg-[#0c0e12] border border-white/5 rounded-2xl space-y-4 hover:border-primary/20 transition-all group">
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_8px_#a48cf4]"></span>
+                        {localExpert?.contemporary_behaviors?.title || "Living Rhythms & Trends"}
+                      </h3>
+                      <ul className="space-y-3">
+                        {(localExpert?.contemporary_behaviors?.insights || []).map((ins: string, idx: number) => (
+                          <li key={idx} className="text-xs font-medium text-slate-400 leading-relaxed flex items-start gap-2">
+                            <span className="text-primary mt-0.5">•</span>
+                            <span>{ins}</span>
+                          </li>
+                        ))}
+                        {(!localExpert?.contemporary_behaviors?.insights || localExpert.contemporary_behaviors.insights.length === 0) && (
+                          <li className="text-xs font-medium text-slate-500 italic">No contemporary trends indexed.</li>
+                        )}
+                      </ul>
+                    </div>
+
+                    {/* Unwritten Customs */}
+                    <div className="p-6 bg-[#0c0e12] border border-white/5 rounded-2xl space-y-4 hover:border-amber-400/20 transition-all group">
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_8px_#fbbf24]"></span>
+                        {localExpert?.unwritten_customs?.title || "Unwritten Social Codes"}
+                      </h3>
+                      <ul className="space-y-3">
+                        {(localExpert?.unwritten_customs?.insights || []).map((ins: string, idx: number) => (
+                          <li key={idx} className="text-xs font-medium text-slate-400 leading-relaxed flex items-start gap-2">
+                            <span className="text-amber-400 mt-0.5">•</span>
+                            <span>{ins}</span>
+                          </li>
+                        ))}
+                        {(!localExpert?.unwritten_customs?.insights || localExpert.unwritten_customs.insights.length === 0) && (
+                          <li className="text-xs font-medium text-slate-500 italic">No social customs indexed.</li>
+                        )}
+                      </ul>
+                    </div>
+
+                    {/* Folklore & Hidden Heritage */}
+                    <div className="p-6 bg-[#0c0e12] border border-white/5 rounded-2xl space-y-4 hover:border-emerald-400/20 transition-all group">
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]"></span>
+                        {localExpert?.folklore_heritage?.title || "Folklore & Hidden Heritage"}
+                      </h3>
+                      <ul className="space-y-3">
+                        {(localExpert?.folklore_heritage?.insights || []).map((ins: string, idx: number) => (
+                          <li key={idx} className="text-xs font-medium text-slate-400 leading-relaxed flex items-start gap-2">
+                            <span className="text-emerald-400 mt-0.5">•</span>
+                            <span>{ins}</span>
+                          </li>
+                        ))}
+                        {(!localExpert?.folklore_heritage?.insights || localExpert.folklore_heritage.insights.length === 0) && (
+                          <li className="text-xs font-medium text-slate-500 italic">No folklore or heritage stories indexed.</li>
+                        )}
+                      </ul>
+                    </div>
+
+                    {/* Guidebook vs Reality */}
+                    <div className="p-6 bg-[#0c0e12] border border-white/5 rounded-2xl space-y-4 hover:border-rose-400/20 transition-all group">
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shadow-[0_0_8px_#f87171]"></span>
+                        {localExpert?.guidebook_vs_reality?.title || "Guidebook vs. Reality"}
+                      </h3>
+                      <ul className="space-y-3">
+                        {(localExpert?.guidebook_vs_reality?.insights || []).map((ins: string, idx: number) => (
+                          <li key={idx} className="text-xs font-medium text-slate-400 leading-relaxed flex items-start gap-2">
+                            <span className="text-rose-400 mt-0.5">•</span>
+                            <span>{ins}</span>
+                          </li>
+                        ))}
+                        {(!localExpert?.guidebook_vs_reality?.insights || localExpert.guidebook_vs_reality.insights.length === 0) && (
+                          <li className="text-xs font-medium text-slate-500 italic">No reality insights indexed.</li>
+                        )}
+                      </ul>
+                    </div>
+
+                    {/* Authenticity Signals */}
+                    <div className="p-6 bg-[#0c0e12] border border-white/5 rounded-2xl space-y-4 hover:border-indigo-400/20 transition-all group md:col-span-2">
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 shadow-[0_0_8px_#818cf8]"></span>
+                        {localExpert?.authenticity_signals?.title || "Living Authenticity Signals"}
+                      </h3>
+                      <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {(localExpert?.authenticity_signals?.insights || []).map((ins: string, idx: number) => (
+                          <li key={idx} className="text-xs font-medium text-slate-400 leading-relaxed flex items-start gap-2">
+                            <span className="text-indigo-400 mt-0.5">•</span>
+                            <span>{ins}</span>
+                          </li>
+                        ))}
+                        {(!localExpert?.authenticity_signals?.insights || localExpert.authenticity_signals.insights.length === 0) && (
+                          <li className="text-xs font-medium text-slate-500 italic md:col-span-2">No authenticity signals indexed.</li>
+                        )}
+                      </ul>
+                    </div>
+
+                    {/* Sensory Profile */}
+                    <div className="p-6 bg-[#0c0e12] border border-white/5 rounded-2xl space-y-4 hover:border-fuchsia-400/20 transition-all group md:col-span-2">
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-fuchsia-400 shadow-[0_0_8px_#e879f9]"></span>
+                        {localExpert?.sensory_profile?.title || "Sensory Signature"}
+                      </h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+                        
+                        {/* Sounds */}
+                        <div className="space-y-2">
+                          <span className="text-[10px] font-bold text-fuchsia-400 uppercase tracking-widest block">Sounds</span>
+                          <ul className="space-y-2">
+                            {(localExpert?.sensory_profile?.sounds || []).map((snd: string, idx: number) => (
+                              <li key={idx} className="text-xs font-medium text-slate-400 leading-relaxed flex items-start gap-2">
+                                <span className="text-slate-500">•</span>
+                                <span>{snd}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        {/* Scents */}
+                        <div className="space-y-2">
+                          <span className="text-[10px] font-bold text-fuchsia-400 uppercase tracking-widest block">Scents</span>
+                          <ul className="space-y-2">
+                            {(localExpert?.sensory_profile?.scents || []).map((sct: string, idx: number) => (
+                              <li key={idx} className="text-xs font-medium text-slate-400 leading-relaxed flex items-start gap-2">
+                                <span className="text-slate-500">•</span>
+                                <span>{sct}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        {/* Colors */}
+                        <div className="space-y-2">
+                          <span className="text-[10px] font-bold text-fuchsia-400 uppercase tracking-widest block">Colors</span>
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {(localExpert?.sensory_profile?.colors || []).map((clr: string, idx: number) => {
+                              const hexMatch = clr.match(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})/);
+                              const colorHex = hexMatch ? hexMatch[0] : '#a48cf4';
+                              return (
+                                <div key={idx} className="flex items-center gap-2 p-2 bg-white/5 rounded-xl border border-white/5">
+                                  <span 
+                                    className="w-3 h-3 rounded-full border border-white/20" 
+                                    style={{ backgroundColor: colorHex }}
+                                  ></span>
+                                  <span className="text-[10px] font-bold text-slate-300">{clr}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
           </AnimatePresence>
 
           {/* Enhanced Error Overlay */}

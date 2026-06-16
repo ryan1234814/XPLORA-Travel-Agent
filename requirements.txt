@@ -15,3 +15,4 @@ uvicorn
 mysql-connector-python
 pinecone-client
 langchain-pinecone
+scrapegraph-py

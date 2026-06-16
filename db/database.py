@@ -10,9 +10,11 @@ def get_db_connection():
         host=os.getenv("MYSQL_HOST", "localhost"),
         port=int(os.getenv("MYSQL_PORT", 3306)),
         user=os.getenv("MYSQL_USER", "root"),
-        password=os.getenv("MYSQL_PASSWORD", "newpassword")
+        password=os.getenv("MYSQL_PASSWORD", "newpassword"),
+        connection_timeout=2
     )
     cursor = db_connection.cursor()
+
     
     db_name = os.getenv("MYSQL_DATABASE", "travel_agent")
     cursor.execute(f"CREATE DATABASE IF NOT EXISTS {db_name}")
