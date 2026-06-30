@@ -13,13 +13,17 @@ from config.langgraph_config import LangGraphConfig as config
 from config.api_config import api_config
 import requests
 import threading
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
-# Generic retry logic for Gemini Rate Limits (429)
+# Generic retry logic for capacity / rate-limit errors (429, 503, etc.)
 def is_rate_limit_error(exception):
-    """Check if the error is a rate limit error."""
+    """Check if the error is a rate limit or capacity error that should trigger a retry or fallback."""
     error_str = str(exception).lower()
-    return "ratelimit" in error_str or "slow down" in error_str or "429" in error_str
+    return any(phrase in error_str for phrase in [
+        "ratelimit", "rate limit", "slow down", "429", "503",
+        "capacity", "overloaded", "over load", "high load",
+        "service unavailable", "try again", "too many requests",
+        "temporarily unavailable", "server busy"
+    ])
 
 def _safe_message_content(message: Any) -> str:
     """Convert a LangChain message (or any object) into a displayable string."""
@@ -358,21 +362,48 @@ class LangTravelAgents:
         self.request_interval = 0.1  # Reduced to 0.1 for maximum speed
         self.graph=self.create_agent_graph()
 
-    @retry(
-        retry=retry_if_exception(is_rate_limit_error),
-        wait=wait_exponential(multiplier=2, min=4, max=60),
-        stop=stop_after_attempt(5),
-        reraise=True
-    )
-    def _invoke_llm(self, messages: List[BaseMessage]):
-        """Robust wrapper for LLM invocation using OpenRouter or Ollama."""
-        # Proactive Rate Limiting
-        with self._lock:
-            elapsed = time.time() - self._last_request_time
-            if elapsed < self.request_interval:
-                time.sleep(self.request_interval - elapsed)
-            self._last_request_time = time.time()
+    def _invoke_with_retry(self, llm_instance, messages: List[BaseMessage], provider_name: str, max_attempts: int = 3):
+        """Invoke an LLM with retry logic for rate-limit / capacity errors.
+        Uses exponential backoff between attempts.
+        """
+        last_error = None
+        for attempt in range(max_attempts):
+            try:
+                # Proactive Rate Limiting
+                with self._lock:
+                    elapsed = time.time() - self._last_request_time
+                    if elapsed < self.request_interval:
+                        time.sleep(self.request_interval - elapsed)
+                    self._last_request_time = time.time()
 
+                result = llm_instance.invoke(messages)
+                return result
+            except Exception as e:
+                last_error = e
+                
+                if is_rate_limit_error(e) and attempt < max_attempts - 1:
+                    wait_time = (2 ** attempt) * 2  # 2, 4, 8 seconds
+                    print(f"[WARNING] {provider_name} capacity/rate-limit error (attempt {attempt + 1}/{max_attempts}): {str(e)[:100]}")
+                    print(f"[INFO] Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                elif is_rate_limit_error(e):
+                    print(f"[ERROR] {provider_name} still unavailable after {max_attempts} attempts: {str(e)[:100]}")
+                else:
+                    # Non-capacity error, don't retry
+                    print(f"[ERROR] {provider_name} invocation failed: {type(e).__name__}: {str(e)[:200]}")
+                    break
+        
+        # All retries exhausted or non-retryable error
+        raise last_error
+
+    def _invoke_llm(self, messages: List[BaseMessage]):
+        """Robust wrapper for LLM invocation with automatic Groq -> OpenRouter fallback.
+        
+        Flow:
+        1. If llm_type is "groq": try Groq once. On ANY failure, immediately fall back to OpenRouter (with retries).
+        2. If llm_type is "openrouter": try OpenRouter directly (with retries).
+        3. If llm_type is "ollama": use the Ollama client directly.
+        """
         # Clean messages: Ensure no empty content
         cleaned_messages = []
         for msg in messages:
@@ -389,69 +420,95 @@ class LangTravelAgents:
             cleaned_messages = [HumanMessage(content="Please provide travel recommendations.")]
         
         try:
-            # Handle Ollama direct API
+            # --- OLLAMA PATH ---
             if self.llm_type == "ollama":
-                # Convert LangChain messages to Ollama format
-                ollama_messages = []
-                for msg in cleaned_messages:
-                    if isinstance(msg, SystemMessage):
-                        ollama_messages.append({"role": "system", "content": msg.content})
-                    elif isinstance(msg, AIMessage):
-                        ollama_messages.append({"role": "assistant", "content": msg.content})
-                    else:
-                        ollama_messages.append({"role": "user", "content": msg.content})
-                
-                print(f"[DEBUG] Calling Ollama with {len(ollama_messages)} messages")
-                print(f"[DEBUG] First message preview: {ollama_messages[0]['content'][:100]}...")
-                
-                # Call Ollama API directly
-                response = self.ollama_client.chat(
-                    model=config.OLLAMA_MODEL,
-                    messages=ollama_messages,
-                    options={
-                        "temperature": config.TEMPERATURE,
-                        "num_predict": config.MAX_TOKENS,
-                        "num_ctx": 8192,
-                    }
-                )
-                
-                # Debug: Print full response structure
-                print(f"[DEBUG] Ollama response type: {type(response)}")
-                print(f"[DEBUG] Ollama response attributes: {dir(response)}")
-                
-                # Extract content from response - it's an object, not a dict!
-                try:
-                    content = response.message.content
-                    print(f"[DEBUG] Ollama API response length: {len(content)}")
-                    print(f"[DEBUG] Response preview: {content[:200]}")
-                except AttributeError as e:
-                    print(f"[ERROR] Failed to extract content: {e}")
-                    print(f"[ERROR] Response object: {response}")
-                    content = ""
-                
-                # Return as AIMessage for compatibility
-                return AIMessage(content=content)
+                return self._invoke_ollama(cleaned_messages)
             
-            # Handle OpenRouter or Groq via LangChain
-            else:
+            # --- GROQ PATH (with automatic OpenRouter fallback) ---
+            if self.llm_type == "groq":
                 try:
+                    # Try Groq once — fail fast on any error
+                    with self._lock:
+                        elapsed = time.time() - self._last_request_time
+                        if elapsed < self.request_interval:
+                            time.sleep(self.request_interval - elapsed)
+                        self._last_request_time = time.time()
+                    
                     result = self.llm.invoke(cleaned_messages)
-                    print(f"[DEBUG] LLM invocation successful. Response type: {type(result)}")
-                    print(f"[DEBUG] Response content length: {len(str(result.content)) if hasattr(result, 'content') else 'N/A'}")
+                    print(f"[DEBUG] Groq invocation successful. Response length: {len(str(result.content)) if hasattr(result, 'content') else 'N/A'}")
                     return result
-                except Exception as llm_err:
-                    if self.llm_type == "groq" and hasattr(self, "fallback_llm") and self.fallback_llm:
-                        print(f"[WARNING] Groq invocation failed ({str(llm_err)}). Falling back to OpenRouter...")
-                        fallback_result = self.fallback_llm.invoke(cleaned_messages)
-                        print(f"[DEBUG] OpenRouter fallback successful.")
-                        return fallback_result
-                    raise llm_err
-                
+                except Exception as groq_err:
+                    groq_err_str = str(groq_err)[:200]
+                    print(f"[WARNING] Groq invocation failed: {type(groq_err).__name__}: {groq_err_str}")
+                    
+                    if hasattr(self, "fallback_llm") and self.fallback_llm:
+                        print(f"[INFO] Automatically falling back to OpenRouter...")
+                        # Retry OpenRouter up to 3 times with backoff
+                        try:
+                            fallback_result = self._invoke_with_retry(
+                                self.fallback_llm, cleaned_messages, 
+                                provider_name="OpenRouter (Groq fallback)", max_attempts=3
+                            )
+                            print(f"[SUCCESS] OpenRouter fallback generated response.")
+                            return fallback_result
+                        except Exception as fb_err:
+                            print(f"[ERROR] OpenRouter fallback also failed: {type(fb_err).__name__}: {str(fb_err)[:200]}")
+                            raise  # Let outer handler catch this
+                    else:
+                        raise groq_err
+            
+            # --- OPENROUTER PATH (primary, with retries) ---
+            if self.llm_type == "openrouter":
+                try:
+                    result = self._invoke_with_retry(
+                        self.llm, cleaned_messages,
+                        provider_name="OpenRouter", max_attempts=3
+                    )
+                    print(f"[DEBUG] OpenRouter invocation successful.")
+                    return result
+                except Exception as or_err:
+                    print(f"[ERROR] OpenRouter invocation failed after retries: {type(or_err).__name__}: {str(or_err)[:200]}")
+                    raise
+                    
         except Exception as e:
-            print(f"[ERROR] LLM invocation failed: {type(e).__name__}: {str(e)}")
+            print(f"[ERROR] All LLM invocation paths failed: {type(e).__name__}: {str(e)[:200]}")
             print(f"[ERROR] Full error details: {repr(e)}")
             # Return a fallback message instead of crashing
             return AIMessage(content="Unable to generate response due to connection error. Please try again.")
+
+    def _invoke_ollama(self, cleaned_messages: List[BaseMessage]):
+        """Invoke Ollama directly via its Python client."""
+        ollama_messages = []
+        for msg in cleaned_messages:
+            if isinstance(msg, SystemMessage):
+                ollama_messages.append({"role": "system", "content": msg.content})
+            elif isinstance(msg, AIMessage):
+                ollama_messages.append({"role": "assistant", "content": msg.content})
+            else:
+                ollama_messages.append({"role": "user", "content": msg.content})
+        
+        print(f"[DEBUG] Calling Ollama with {len(ollama_messages)} messages")
+        if ollama_messages:
+            print(f"[DEBUG] First message preview: {ollama_messages[0]['content'][:100]}...")
+        
+        response = self.ollama_client.chat(
+            model=config.OLLAMA_MODEL,
+            messages=ollama_messages,
+            options={
+                "temperature": config.TEMPERATURE,
+                "num_predict": config.MAX_TOKENS,
+                "num_ctx": 8192,
+            }
+        )
+        
+        try:
+            content = response.message.content
+            print(f"[DEBUG] Ollama API response length: {len(content)}")
+            return AIMessage(content=content)
+        except AttributeError as e:
+            print(f"[ERROR] Failed to extract Ollama response content: {e}")
+            print(f"[ERROR] Response object: {response}")
+            return AIMessage(content="")
 
     def create_agent_graph(self)->StateGraph:
         workflow=StateGraph(TravelPlanState)
