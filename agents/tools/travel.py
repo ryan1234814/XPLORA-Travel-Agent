@@ -558,7 +558,7 @@ def search_place_comprehensive(place: str, question: str) -> str:
             executor.submit(search_travel_guide): "travel_guide",
             executor.submit(search_rag): "rag",
         }
-        for future in as_completed(futures, timeout=15):
+        for future in as_completed(futures, timeout=30):
             try:
                 result = future.result()
                 label = futures[future]

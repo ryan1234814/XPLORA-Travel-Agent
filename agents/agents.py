@@ -1964,7 +1964,7 @@ Generate the JSON for {destination} now:"""
         with ThreadPoolExecutor(max_workers=2) as executor:
             geo_future = executor.submit(geocode_place, place)
             search_future = executor.submit(search_place_comprehensive, place, question)
-            for future in as_completed([geo_future, search_future], timeout=20):
+            for future in as_completed([geo_future, search_future], timeout=45):
                 try:
                     if future is geo_future:
                         location = future.result()
