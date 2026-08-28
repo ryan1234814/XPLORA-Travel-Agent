@@ -7,11 +7,17 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: "#a48cf4",
-        secondary: "#6e56cf",
-        accent: "#c695fa",
+        primary: "#38bdf8",
+        secondary: "#818cf8",
+        accent: "#67e8f9",
         dark: "#07090d",
         card: "rgba(22, 26, 33, 0.7)",
+        teal: "#2dd4bf",
+        amber: "#fbbf24",
+        rose: "#fb7185",
+        emerald: "#34d399",
+        fuchsia: "#e879f9",
+        indigo: "#818cf8",
       },
       fontFamily: {
         outfit: ["Outfit", "sans-serif"],

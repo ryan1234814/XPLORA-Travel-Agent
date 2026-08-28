@@ -1,5 +1,4 @@
 ddgs
-duckduckgo_search
 fastapi
 langchain_core
 langchain_groq
@@ -15,4 +14,3 @@ uvicorn
 mysql-connector-python
 pinecone-client
 langchain-pinecone
-scrapegraph-py

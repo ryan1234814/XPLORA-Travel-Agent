@@ -29,17 +29,30 @@ def get_db_connection():
             budget VARCHAR(255),
             interests TEXT,
             itinerary_data LONGTEXT,
+            travel_dates VARCHAR(255),
+            group_size INT,
+            group_type VARCHAR(255),
+            dietary_requirements TEXT,
+            accessibility TEXT,
+            pace VARCHAR(100),
+            accommodation_preference VARCHAR(255),
+            occasion VARCHAR(255),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     return db_connection, cursor
 
-def save_itinerary(origin, destination, duration, budget, interests, itinerary_data):
+def save_itinerary(origin, destination, duration, budget, interests, itinerary_data,
+                   travel_dates="", group_size=2, group_type="Couple",
+                   dietary_requirements=None, accessibility=None, pace="Moderate",
+                   accommodation_preference="No preference", occasion=""):
     try:
         db_connection, cursor = get_db_connection()
         insert_query = """
-            INSERT INTO itineraries (origin, destination, duration, budget, interests, itinerary_data)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO itineraries (origin, destination, duration, budget, interests, itinerary_data,
+                                     travel_dates, group_size, group_type, dietary_requirements,
+                                     accessibility, pace, accommodation_preference, occasion)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         cursor.execute(insert_query, (
             origin, 
@@ -47,7 +60,15 @@ def save_itinerary(origin, destination, duration, budget, interests, itinerary_d
             duration, 
             budget, 
             json.dumps(interests), 
-            json.dumps(itinerary_data)
+            json.dumps(itinerary_data),
+            travel_dates or "",
+            group_size or 2,
+            group_type or "Couple",
+            json.dumps(dietary_requirements or []),
+            json.dumps(accessibility or []),
+            pace or "Moderate",
+            accommodation_preference or "No preference",
+            occasion or ""
         ))
         db_connection.commit()
         cursor.close()

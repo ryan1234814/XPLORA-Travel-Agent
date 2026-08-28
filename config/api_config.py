@@ -22,8 +22,7 @@ FREE_EXCHANGE_URL: str = "https://api.exchangerate-api.com/v4/latest"
 PINECONE_API_KEY: Optional[str] = os.getenv('PINECONE_API_KEY')
 PINECONE_INDEX_NAME: str = os.getenv('PINECONE_INDEX_NAME', 'travel-guides')
 
-# ScrapeGraphAI API Key Configuration
-SCRAPEGRAPH_API_KEY: Optional[str] = os.getenv('SCRAPEGRAPH_API_KEY') or os.getenv('SGAI_API_KEY')
+
 
 def get_api_status() -> dict:
     """Check which APIs have valid keys"""
@@ -31,8 +30,7 @@ def get_api_status() -> dict:
         'weather': bool(TOMORROW_IO_API_KEY),
         'places': bool(GOOGLE_PLACES_API_KEY), 
         'exchange': bool(EXCHANGERATE_API_KEY),
-        'pinecone': bool(PINECONE_API_KEY),
-        'scrapegraph': bool(SCRAPEGRAPH_API_KEY)
+        'pinecone': bool(PINECONE_API_KEY)
     }
 
 # Create API config object for imports
@@ -45,7 +43,6 @@ class APIConfig:
     EXCHANGE_RATE_URL = EXCHANGE_RATE_URL
     PINECONE_API_KEY = PINECONE_API_KEY
     PINECONE_INDEX_NAME = PINECONE_INDEX_NAME
-    SCRAPEGRAPH_API_KEY = SCRAPEGRAPH_API_KEY
 
 # Global instance for importing
 api_config = APIConfig()

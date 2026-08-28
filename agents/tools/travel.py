@@ -1,7 +1,7 @@
 import asyncio
 from typing import List, Dict, Any, Optional
 from langchain_core.tools import tool
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 import json
 import re
 import requests
@@ -88,10 +88,11 @@ def search_weather_info(destination: str, dates: str = "") -> str:
         return f"Error searching for weather info: {str(e)}"
 
 @tool
-def search_hotels(destination: str, budget: str = "mid-range") -> str:
+def search_hotels(destination: str, budget: str = "mid-range", accommodation_type: str = "") -> str:
     """Search for hotel information and pricing in a specific destination."""
     try:
-        hotel_query = f"{destination} hotels {budget} best places to stay accommodation"
+        acc_type = f" {accommodation_type}" if accommodation_type and accommodation_type != "No preference" else ""
+        hotel_query = f"{destination} {budget} hotels{acc_type} best places to stay accommodation"
         with DDGS() as ddgs:
             results = list(ddgs.text(
                 hotel_query,
@@ -103,7 +104,7 @@ def search_hotels(destination: str, budget: str = "mid-range") -> str:
             if not results:
                 return f"No hotel information found for {destination}"
             
-            hotels = [f"Hotel options in {destination} ({budget} budget):"]
+            hotels = [f"Hotel options in {destination} ({budget} budget{acc_type}):"]
             for i, result in enumerate(results[:4], 1):
                 hotels.append(
                     f"{i}. {result.get('title', 'Hotel')}\n"
@@ -115,10 +116,11 @@ def search_hotels(destination: str, budget: str = "mid-range") -> str:
         return f"Error searching hotels: {str(e)}"
 
 @tool
-def search_restaurants(destination: str, cuisine: str = "") -> str:
+def search_restaurants(destination: str, cuisine: str = "", dietary: str = "") -> str:
     """Search for restaurants and dining options in a specific destination."""
     try:
-        restaurant_query = f"{destination} best restaurants {cuisine} local food dining where to eat"
+        dietary_filter = f" {dietary}" if dietary and dietary != "No restrictions" else ""
+        restaurant_query = f"{destination} best restaurants {cuisine}{dietary_filter} local food dining where to eat"
         with DDGS() as ddgs:
             results = list(ddgs.text(
                 restaurant_query,
@@ -130,7 +132,7 @@ def search_restaurants(destination: str, cuisine: str = "") -> str:
             if not results:
                 return f"No restaurant information found for {destination}"
             
-            restaurants = [f"Restaurant recommendations in {destination}:"]
+            restaurants = [f"Restaurant recommendations in {destination}{dietary_filter}:"]
             for i, result in enumerate(results[:4], 1):
                 restaurants.append(
                     f"{i}. {result.get('title', 'Restaurant')}\n"
@@ -142,10 +144,11 @@ def search_restaurants(destination: str, cuisine: str = "") -> str:
         return f"Error searching restaurants: {str(e)}"
 
 @tool
-def search_attractions(destination: str) -> str:
+def search_attractions(destination: str, accessibility: str = "") -> str:
     """Search for top attractions and things to do in a specific destination."""
     try:
-        attraction_query = f"{destination} top attractions must see places things to do"
+        acc_filter = f" accessible {accessibility}" if accessibility and accessibility != "None" else ""
+        attraction_query = f"{destination} top attractions must see places things to do{acc_filter}"
         with DDGS() as ddgs:
             results = list(ddgs.text(
                 attraction_query,
@@ -157,7 +160,7 @@ def search_attractions(destination: str) -> str:
             if not results:
                 return f"No attraction information found for {destination}"
             
-            attractions = [f"Top attractions in {destination}:"]
+            attractions = [f"Top attractions in {destination}{acc_filter}:"]
             for i, result in enumerate(results[:5], 1):
                 attractions.append(
                     f"{i}. {result.get('title', 'Attraction')}\n"
@@ -458,6 +461,201 @@ def search_travel_blogs(query: str) -> str:
         return rag_db.query(query, k=3)
     except Exception as e:
         return f"Error searching travel knowledge base: {str(e)}"
+
+def geocode_place(place: str) -> dict:
+    """Geocode a place name using Nominatim (OpenStreetMap) free API.
+    Returns {display_name, lat, lng, address, type} or {} on failure.
+    """
+    import time as _time
+    try:
+        params = {
+            "q": place,
+            "format": "json",
+            "limit": 1,
+        }
+        headers = {"User-Agent": "XPLORA/1.0"}
+        resp = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params=params,
+            headers=headers,
+            timeout=8,
+        )
+        if resp.status_code == 429:
+            # Rate limited — wait and retry once
+            _time.sleep(2)
+            resp = requests.get(
+                "https://nominatim.openstreetmap.org/search",
+                params=params,
+                headers=headers,
+                timeout=8,
+            )
+        if resp.status_code != 200:
+            print(f"[WARNING] Nominatim returned status {resp.status_code}")
+            return {}
+        results = resp.json()
+        if not results:
+            return {}
+        r = results[0]
+        return {
+            "display_name": r.get("display_name", place),
+            "lat": float(r.get("lat", 0)),
+            "lng": float(r.get("lon", 0)),
+            "address": r.get("display_name", ""),
+            "type": r.get("type", "place"),
+        }
+    except Exception as e:
+        print(f"[WARNING] Geocoding failed for '{place}': {e}")
+        return {}
+
+
+def search_place_comprehensive(place: str, question: str) -> str:
+    """Perform comprehensive search for a place + question.
+    Combines DDGS web search and internal RAG. Returns formatted string.
+    Never throws — always returns a string.
+    """
+    import time as _time
+    all_sources: list = []
+    source_counter = 0
+
+    # Search 1: Place + question specific
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(
+                f"{place} {question}",
+                max_results=5,
+                region=config.DUCKDUCKGO_REGION,
+                safesearch=config.DUCKDUCKGO_SAFESEARCH,
+            ))
+            for r in results:
+                source_counter += 1
+                title = r.get("title", "N/A")
+                body = r.get("body", "No details")
+                href = r.get("href", "")
+                all_sources.append({
+                    "num": source_counter,
+                    "title": title,
+                    "body": body,
+                    "url": href,
+                })
+    except Exception as e:
+        print(f"[WARNING] Place Q&A search 1 failed: {e}")
+        _time.sleep(1)
+        try:
+            with DDGS() as ddgs:
+                results = list(ddgs.text(
+                    f"{place} {question}",
+                    max_results=5,
+                    region=config.DUCKDUCKGO_REGION,
+                    safesearch=config.DUCKDUCKGO_SAFESEARCH,
+                ))
+                for r in results:
+                    source_counter += 1
+                    all_sources.append({
+                        "num": source_counter,
+                        "title": r.get("title", "N/A"),
+                        "body": r.get("body", "No details"),
+                        "url": r.get("href", ""),
+                    })
+        except Exception as e2:
+            print(f"[WARNING] Place Q&A search 1 retry failed: {e2}")
+
+    _time.sleep(1)
+
+    # Search 2: Place general travel guide info
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(
+                f"{place} travel guide history entry fee timings accessibility",
+                max_results=5,
+                region=config.DUCKDUCKGO_REGION,
+                safesearch=config.DUCKDUCKGO_SAFESEARCH,
+            ))
+            for r in results:
+                source_counter += 1
+                all_sources.append({
+                    "num": source_counter,
+                    "title": r.get("title", "N/A"),
+                    "body": r.get("body", "No details"),
+                    "url": r.get("href", ""),
+                })
+    except Exception as e:
+        print(f"[WARNING] Place Q&A search 2 failed: {e}")
+
+    _time.sleep(1)
+
+    # Search 3: Internal RAG (travel blogs)
+    try:
+        rag_result = search_travel_blogs.invoke({"query": f"{place} {question}"})
+        if rag_result and "Error" not in str(rag_result):
+            source_counter += 1
+            all_sources.append({
+                "num": source_counter,
+                "title": "Travel Knowledge Base",
+                "body": rag_result[:800],
+                "url": "",
+            })
+    except Exception as e:
+        print(f"[WARNING] Place Q&A RAG search failed: {e}")
+
+    # Format all sources
+    formatted_parts: list = []
+    for src in all_sources:
+        formatted_parts.append(
+            f"{src['num']}. {src['title']}\n"
+            f"   {src['body']}\n"
+            f"   Source: {src['url']}"
+        )
+
+    return "\n".join(formatted_parts) if formatted_parts else f"No search results found for {place}"
+
+
+def extract_sources_from_text(text: str) -> list:
+    """Extract source URLs from numbered search results text.
+    Returns list of {title, url, snippet}.
+    """
+    import re as _re
+    sources = []
+    lines = text.split("\n")
+    current_title = ""
+    current_snippet = ""
+    current_url = ""
+    for line in lines:
+        stripped = line.strip()
+        # Match numbered title lines like "1. Title" or "1.  Title"
+        title_match = _re.match(r'^\d+\.\s+(.+)$', stripped)
+        if title_match:
+            # Save previous source if exists
+            if current_title and current_url:
+                sources.append({
+                    "title": current_title,
+                    "url": current_url,
+                    "snippet": current_snippet[:200].strip(),
+                })
+            elif current_title and not current_url:
+                sources.append({
+                    "title": current_title,
+                    "url": "",
+                    "snippet": current_snippet[:200].strip(),
+                })
+            current_title = title_match.group(1).strip()
+            current_snippet = ""
+            current_url = ""
+            continue
+        if stripped.startswith("Source:"):
+            url = stripped.replace("Source:", "").strip()
+            current_url = url
+            continue
+        if stripped and not stripped.startswith("Source:"):
+            current_snippet += " " + stripped
+    # Save last source
+    if current_title:
+        sources.append({
+            "title": current_title,
+            "url": current_url,
+            "snippet": current_snippet[:200].strip(),
+        })
+    return sources
+
 
 # Export all tools in a single list
 ALL_TOOLS = [

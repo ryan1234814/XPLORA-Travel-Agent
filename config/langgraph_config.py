@@ -13,15 +13,15 @@ class LangGraphConfig:
         
         # Groq Configuration (if LLM_PROVIDER = "groq") - RECOMMENDED
         GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-        GROQ_MODEL = "llama-3.3-70b-versatile"  # Fast and powerful
+        GROQ_MODEL = "openai/gpt-oss-120b"  # Fast and powerful (llama-3.3-70b-versatile was decommissioned)
         
         # OpenRouter Configuration (if LLM_PROVIDER = "openrouter")
         OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
         # Free model options (switch if you hit rate limits):
-        # - meta-llama/llama-3.2-3b-instruct:free (recommended - better rate limits)
-        # - nvidia/nemotron-3-nano-30b-a3b:free (alternative)
-        # - google/gemma-2-9b-it:free (alternative)
-        OPENROUTER_MODEL = "meta-llama/llama-3.2-3b-instruct:free"
+        # - nvidia/nemotron-3.5-lightning:free (verified working Aug 2026)
+        # - dots-studio/dots-3-note-preview:free
+        # - liquid/lfm-2.5-2.6b:free
+        OPENROUTER_MODEL = "nvidia/nemotron-3.5-lightning:free"
         
         # Ollama Configuration (if LLM_PROVIDER = "ollama")
         OLLAMA_BASE_URL = "http://localhost:11434"
