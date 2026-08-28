@@ -465,47 +465,51 @@ def search_travel_blogs(query: str) -> str:
 def geocode_place(place: str) -> dict:
     """Geocode a place name using Nominatim (OpenStreetMap) free API.
     Returns {display_name, lat, lng, address, type} or {} on failure.
+    Retries once on failure with a longer timeout.
     """
     import time as _time
-    try:
-        params = {
-            "q": place,
-            "format": "json",
-            "limit": 1,
-        }
-        headers = {"User-Agent": "XPLORA/1.0"}
-        resp = requests.get(
-            "https://nominatim.openstreetmap.org/search",
-            params=params,
-            headers=headers,
-            timeout=8,
-        )
-        if resp.status_code == 429:
-            # Rate limited — wait and retry once
-            _time.sleep(2)
+    params = {
+        "q": place,
+        "format": "json",
+        "limit": 1,
+    }
+    headers = {"User-Agent": "XPLORA/1.0 (travel-agent)"}
+
+    for attempt in range(2):
+        try:
             resp = requests.get(
                 "https://nominatim.openstreetmap.org/search",
                 params=params,
                 headers=headers,
-                timeout=8,
+                timeout=15 if attempt == 0 else 20,
             )
-        if resp.status_code != 200:
-            print(f"[WARNING] Nominatim returned status {resp.status_code}")
+            if resp.status_code == 429:
+                _time.sleep(2)
+                continue
+            if resp.status_code != 200:
+                print(f"[WARNING] Nominatim status {resp.status_code}")
+                if attempt == 0:
+                    _time.sleep(1)
+                    continue
+                return {}
+            results = resp.json()
+            if not results:
+                return {}
+            r = results[0]
+            return {
+                "display_name": r.get("display_name", place),
+                "lat": float(r.get("lat", 0)),
+                "lng": float(r.get("lon", 0)),
+                "address": r.get("display_name", ""),
+                "type": r.get("type", "place"),
+            }
+        except Exception as e:
+            print(f"[WARNING] Geocoding attempt {attempt + 1} failed for '{place}': {e}")
+            if attempt == 0:
+                _time.sleep(1)
+                continue
             return {}
-        results = resp.json()
-        if not results:
-            return {}
-        r = results[0]
-        return {
-            "display_name": r.get("display_name", place),
-            "lat": float(r.get("lat", 0)),
-            "lng": float(r.get("lon", 0)),
-            "address": r.get("display_name", ""),
-            "type": r.get("type", "place"),
-        }
-    except Exception as e:
-        print(f"[WARNING] Geocoding failed for '{place}': {e}")
-        return {}
+    return {}
 
 
 def _ddgs_search(query: str, max_results: int = 5) -> list:
