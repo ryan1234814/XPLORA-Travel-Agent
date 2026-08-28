@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useState, useEffect, type FormEvent, type KeyboardEvent } from 'react';
 import {
   MapPin,
   Zap,
@@ -96,6 +96,7 @@ export default function AskPlace() {
   const [question, setQuestion] = useState('');
   const [conversationId, setConversationId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
   const [result, setResult] = useState<AskPlaceResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [followupInput, setFollowupInput] = useState('');
@@ -120,12 +121,27 @@ export default function AskPlace() {
     return Object.keys(errors).length === 0;
   };
 
+  const loadingSteps = [
+    'Geocoding location...',
+    'Searching the web...',
+    'Analyzing results...',
+    'Generating answer...',
+  ];
+
+  // Advance loading step timer
+  useEffect(() => {
+    if (!isLoading || loadingStep >= loadingSteps.length - 1) return;
+    const stepTimer = setTimeout(() => setLoadingStep(s => Math.min(s + 1, loadingSteps.length - 1)), 2500);
+    return () => clearTimeout(stepTimer);
+  }, [isLoading, loadingStep, loadingSteps.length]);
+
   const handleSubmit = async (submitPlace?: string, submitQuestion?: string) => {
     const p = (submitPlace || place).trim();
     const q = (submitQuestion || question).trim();
     if (!p || q.length < 3) return;
 
     setIsLoading(true);
+    setLoadingStep(0);
     setError(null);
     setFieldErrors({});
     setResult(null);
@@ -304,14 +320,22 @@ export default function AskPlace() {
                 </div>
               </div>
               <p className="text-slate-400 text-sm">Researching <span className="text-white font-medium">{place}</span>...</p>
-              <div className="flex gap-1.5 mt-3">
-                {[0, 1, 2].map(i => (
-                  <motion.div
-                    key={i}
-                    animate={{ scale: [1, 1.4, 1], opacity: [0.3, 1, 0.3] }}
-                    transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
-                    className="w-1.5 h-1.5 rounded-full bg-primary"
-                  />
+              {/* Step progress */}
+              <div className="mt-5 flex flex-col items-center gap-2">
+                {loadingSteps.map((step, i) => (
+                  <div key={i} className={`flex items-center gap-2 text-xs transition-all duration-300 ${
+                    i < loadingStep ? 'text-primary opacity-60' :
+                    i === loadingStep ? 'text-white' : 'text-slate-600'
+                  }`}>
+                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center text-[8px] shrink-0 transition-all duration-300 ${
+                      i < loadingStep ? 'border-primary/50 bg-primary/20 text-primary' :
+                      i === loadingStep ? 'border-primary bg-primary/10 text-primary animate-pulse' :
+                      'border-white/10 text-slate-600'
+                    }`}>
+                      {i < loadingStep ? '✓' : i + 1}
+                    </div>
+                    <span>{step}</span>
+                  </div>
                 ))}
               </div>
             </motion.div>

@@ -508,100 +508,89 @@ def geocode_place(place: str) -> dict:
         return {}
 
 
+def _ddgs_search(query: str, max_results: int = 5) -> list:
+    """Run a single DDGS search. Returns list of result dicts. Never throws."""
+    try:
+        with DDGS() as ddgs:
+            return list(ddgs.text(
+                query,
+                max_results=max_results,
+                region=config.DUCKDUCKGO_REGION,
+                safesearch=config.DUCKDUCKGO_SAFESEARCH,
+            ))
+    except Exception as e:
+        print(f"[WARNING] DDGS search failed for '{query[:50]}': {e}")
+        return []
+
+
 def search_place_comprehensive(place: str, question: str) -> str:
     """Perform comprehensive search for a place + question.
-    Combines DDGS web search and internal RAG. Returns formatted string.
-    Never throws — always returns a string.
+    Runs all 3 searches IN PARALLEL for maximum speed.
+    Returns formatted string. Never throws.
     """
-    import time as _time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     all_sources: list = []
-    source_counter = 0
 
-    # Search 1: Place + question specific
-    try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(
-                f"{place} {question}",
-                max_results=5,
-                region=config.DUCKDUCKGO_REGION,
-                safesearch=config.DUCKDUCKGO_SAFESEARCH,
-            ))
-            for r in results:
-                source_counter += 1
-                title = r.get("title", "N/A")
-                body = r.get("body", "No details")
-                href = r.get("href", "")
-                all_sources.append({
-                    "num": source_counter,
-                    "title": title,
-                    "body": body,
-                    "url": href,
-                })
-    except Exception as e:
-        print(f"[WARNING] Place Q&A search 1 failed: {e}")
-        _time.sleep(1)
+    # Define 3 parallel search tasks
+    def search_place_question() -> list:
+        return _ddgs_search(f"{place} {question}", max_results=5)
+
+    def search_travel_guide() -> list:
+        return _ddgs_search(f"{place} travel guide history entry fee timings accessibility", max_results=5)
+
+    def search_rag() -> str:
         try:
-            with DDGS() as ddgs:
-                results = list(ddgs.text(
-                    f"{place} {question}",
-                    max_results=5,
-                    region=config.DUCKDUCKGO_REGION,
-                    safesearch=config.DUCKDUCKGO_SAFESEARCH,
-                ))
-                for r in results:
-                    source_counter += 1
-                    all_sources.append({
-                        "num": source_counter,
-                        "title": r.get("title", "N/A"),
-                        "body": r.get("body", "No details"),
-                        "url": r.get("href", ""),
-                    })
-        except Exception as e2:
-            print(f"[WARNING] Place Q&A search 1 retry failed: {e2}")
+            result = search_travel_blogs.invoke({"query": f"{place} {question}"})
+            return str(result) if result and "Error" not in str(result) else ""
+        except Exception as e:
+            print(f"[WARNING] RAG search failed: {e}")
+            return ""
 
-    _time.sleep(1)
+    # Execute all 3 in parallel with a generous timeout
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {
+            executor.submit(search_place_question): "place_question",
+            executor.submit(search_travel_guide): "travel_guide",
+            executor.submit(search_rag): "rag",
+        }
+        for future in as_completed(futures, timeout=15):
+            try:
+                result = future.result()
+                label = futures[future]
+                if label == "rag":
+                    if result:
+                        all_sources.append({
+                            "title": "Travel Knowledge Base",
+                            "body": result[:800],
+                            "url": "",
+                        })
+                else:
+                    for r in result:
+                        all_sources.append({
+                            "title": r.get("title", "N/A"),
+                            "body": r.get("body", "No details"),
+                            "url": r.get("href", ""),
+                        })
+            except Exception as e:
+                print(f"[WARNING] Parallel search task failed: {e}")
 
-    # Search 2: Place general travel guide info
-    try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(
-                f"{place} travel guide history entry fee timings accessibility",
-                max_results=5,
-                region=config.DUCKDUCKGO_REGION,
-                safesearch=config.DUCKDUCKGO_SAFESEARCH,
-            ))
-            for r in results:
-                source_counter += 1
-                all_sources.append({
-                    "num": source_counter,
-                    "title": r.get("title", "N/A"),
-                    "body": r.get("body", "No details"),
-                    "url": r.get("href", ""),
-                })
-    except Exception as e:
-        print(f"[WARNING] Place Q&A search 2 failed: {e}")
-
-    _time.sleep(1)
-
-    # Search 3: Internal RAG (travel blogs)
-    try:
-        rag_result = search_travel_blogs.invoke({"query": f"{place} {question}"})
-        if rag_result and "Error" not in str(rag_result):
-            source_counter += 1
-            all_sources.append({
-                "num": source_counter,
-                "title": "Travel Knowledge Base",
-                "body": rag_result[:800],
-                "url": "",
-            })
-    except Exception as e:
-        print(f"[WARNING] Place Q&A RAG search failed: {e}")
-
-    # Format all sources
-    formatted_parts: list = []
+    # Deduplicate by URL
+    seen_urls: set = set()
+    unique_sources: list = []
     for src in all_sources:
+        url = src.get("url", "")
+        if url and url in seen_urls:
+            continue
+        if url:
+            seen_urls.add(url)
+        unique_sources.append(src)
+
+    # Format numbered output
+    formatted_parts: list = []
+    for i, src in enumerate(unique_sources, 1):
         formatted_parts.append(
-            f"{src['num']}. {src['title']}\n"
+            f"{i}. {src['title']}\n"
             f"   {src['body']}\n"
             f"   Source: {src['url']}"
         )

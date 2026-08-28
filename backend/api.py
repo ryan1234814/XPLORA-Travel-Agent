@@ -17,6 +17,15 @@ from db.database import save_itinerary
 
 app = FastAPI()
 
+# Singleton agent system — initialized once, reused across requests
+_agent_system: Optional[LangTravelAgents] = None
+
+def get_agent_system() -> LangTravelAgents:
+    global _agent_system
+    if _agent_system is None:
+        _agent_system = LangTravelAgents()
+    return _agent_system
+
 # Enable CORS for the React frontend
 app.add_middleware(
     CORSMiddleware,
@@ -193,7 +202,7 @@ class AskPlaceRequest(BaseModel):
 async def ask_place(req: AskPlaceRequest):
     """Answer a question about a specific place using web research + LLM."""
     try:
-        agent_system = LangTravelAgents()
+        agent_system = get_agent_system()
         result = agent_system.answer_place_question(
             place=req.place,
             question=req.question,
@@ -241,7 +250,7 @@ async def ask_place(req: AskPlaceRequest):
 @app.post("/api/generate-itinerary")
 async def generate_itinerary(req: PlanRequest):
     try:
-        agent_system = LangTravelAgents()
+        agent_system = get_agent_system()
         
         state = TravelPlanState(
             messages=[],

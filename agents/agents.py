@@ -1956,52 +1956,55 @@ Generate the JSON for {destination} now:"""
         This is an isolated method — NOT added to the StateGraph.
         Returns dict with answer_markdown, location, facts, sources, followup_suggestions.
         """
-        # Step 1: Geocode the place
-        location = geocode_place(place)
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        # Step 2: Search web + RAG for comprehensive context
-        web_context = search_place_comprehensive(place, question)
+        # Step 1 & 2: Geocode AND search IN PARALLEL (biggest speed win)
+        location: dict = {}
+        web_context: str = ""
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            geo_future = executor.submit(geocode_place, place)
+            search_future = executor.submit(search_place_comprehensive, place, question)
+            for future in as_completed([geo_future, search_future], timeout=20):
+                try:
+                    if future is geo_future:
+                        location = future.result()
+                    else:
+                        web_context = future.result()
+                except Exception as e:
+                    print(f"[WARNING] Parallel task failed: {e}")
 
-        # Step 3: Build conversation history string
+        # Step 3: Build conversation history string (truncated)
         history_str = ""
         if conversation_history:
             history_parts = []
-            for msg in conversation_history[-6:]:  # Last 6 messages max
+            for msg in conversation_history[-4:]:
                 role = msg.get("role", "user")
-                content = msg.get("content", "")
+                content = msg.get("content", "")[:200]
                 history_parts.append(f"{role.capitalize()}: {content}")
             history_str = "\n".join(history_parts)
 
-        # Step 4: Build messages for LLM
+        # Step 4: Build messages for LLM (truncated web_context to save tokens)
         location_str = (
-            f"Display: {location.get('display_name', 'Unknown')}, "
-            f"Lat: {location.get('lat', 'N/A')}, Lng: {location.get('lng', 'N/A')}, "
-            f"Type: {location.get('type', 'place')}"
-        ) if location else "Location could not be determined."
+            f"{location.get('display_name', 'Unknown')} "
+            f"({location.get('lat', 'N/A')}, {location.get('lng', 'N/A')})"
+        ) if location else "Unknown location"
+
+        # Truncate web context to fit within LLM context window efficiently
+        truncated_context = web_context[:3000] if len(web_context) > 3000 else web_context
 
         system_prompt = (
-            "You are XPLORA, an expert travel location assistant. "
-            "Answer ONLY from the provided web context and your knowledge. "
-            "Cite sources as [1][2] etc. when referencing specific information. "
-            "If info is missing from sources, say 'Not found in available sources'. "
-            "Structure your answer with:\n"
-            "## Direct Answer\n"
-            "(Answer the user's specific question concisely)\n\n"
-            "## Key Details\n"
-            "(Bullet points with important facts about the place)\n\n"
-            "## Practical Information\n"
-            "(Timings, entry fees, accessibility, best time to visit, etc.)\n\n"
-            "Keep tone helpful and informative. Return well-formatted markdown."
+            "You are XPLORA, an expert travel assistant. Answer from the web context below. "
+            "Cite sources as [1][2]. If info missing, say 'Not found'. "
+            "Format: ## Direct Answer, ## Key Details (bullets), ## Practical Info."
         )
 
         human_prompt = (
-            f"Place: {place}\n"
+            f"Place: {place} ({location_str})\n"
             f"Question: {question}\n"
-            f"Location Info: {location_str}\n\n"
-            f"Web Context:\n{web_context}\n"
+            f"Web Context:\n{truncated_context}\n"
         )
         if history_str:
-            human_prompt += f"\nPrevious conversation:\n{history_str}\n"
+            human_prompt += f"\nConversation:\n{history_str}\n"
 
         messages = [
             SystemMessage(content=system_prompt),
@@ -2023,47 +2026,27 @@ Generate the JSON for {destination} now:"""
                 f"For a more detailed AI-curated answer, please try again in a few moments."
             )
 
-        # Step 7: Extract sources from web context for the response
-        sources = extract_sources_from_text(web_context)
-        # Deduplicate sources by URL
-        seen_urls: set = set()
-        unique_sources: list = []
-        for s in sources:
-            url = s.get("url", "")
-            if url and url in seen_urls:
-                continue
-            if url:
-                seen_urls.add(url)
-            unique_sources.append(s)
-        sources = unique_sources[:10]  # Cap at 10
+        # Step 7: Extract sources (dedup already done in search_place_comprehensive)
+        sources = extract_sources_from_text(web_context)[:10]
 
-        # Step 8: Generate facts from LLM answer or rule-based
+        # Step 8: Generate facts from answer
         facts: list = []
         answer_lower = answer_text.lower()
-        # Extract facts based on common travel info patterns
         fact_patterns = [
-            ("entry fee", "Entry Fee"),
-            ("admission", "Admission"),
-            ("opening hours", "Opening Hours"),
-            ("best time", "Best Time"),
-            ("wheelchair", "Accessibility"),
-            ("accessible", "Accessibility"),
-            ("timings", "Timings"),
-            ("free entry", "Entry Fee"),
-            ("no entry fee", "Entry Fee"),
+            ("entry fee", "Entry Fee"), ("admission", "Admission"),
+            ("opening hours", "Opening Hours"), ("best time", "Best Time"),
+            ("wheelchair", "Accessibility"), ("accessible", "Accessibility"),
+            ("timings", "Timings"), ("free entry", "Entry Fee"),
             ("ticket", "Ticket Info"),
         ]
         for pattern, label in fact_patterns:
             if pattern in answer_lower:
-                # Try to extract the sentence containing this pattern
                 for line in answer_text.split("\n"):
                     if pattern in line.lower() and len(line.strip()) < 300:
-                        # Clean up the line
                         clean = line.strip().lstrip("#*-• ").strip()
                         if clean and not any(f["label"] == label for f in facts):
                             facts.append({"label": label, "value": clean[:150]})
                             break
-        # Add default facts if none found
         if location and not facts:
             facts = [
                 {"label": "Location", "value": location.get("display_name", place)},
