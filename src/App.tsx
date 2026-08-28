@@ -1190,36 +1190,36 @@ function App() {
                                 </span>
                               </div>
                               <div className="h-12 w-[1px] bg-gradient-to-b from-amber-400/30 to-rose-400/30"></div>
-                              <div className="text-[10px] font-bold text-slate-500 uppercase leading-relaxed tracking-wider">Peak Temp<br /><span className="text-gradient-amber">Expected</span></div>
+                              <div className="text-[10px] font-bold text-slate-300 uppercase leading-relaxed tracking-wider">Peak Temp<br /><span className="text-gradient-amber">Expected</span></div>
                             </div>
                             {/* Temperature Range */}
                             {weather.temperature_c?.expected_low != null && weather.temperature_c?.expected_high != null && (
                               <div className="flex items-center gap-2 p-2.5 bg-white/[0.03] rounded-lg border border-white/[0.04]">
                                 <Thermometer className="w-3.5 h-3.5 text-blue-400" />
-                                <span className="text-[11px] font-medium text-slate-400">
+                                <span className="text-[11px] font-medium text-blue-200">
                                   {Math.round(weather.temperature_c.expected_low)}°C — {Math.round(weather.temperature_c.expected_high)}°C
                                 </span>
                                 {weather.temperature_c.typical_range && (
-                                  <span className="text-[10px] text-slate-600 ml-auto">{weather.temperature_c.typical_range}</span>
+                                  <span className="text-[10px] text-slate-300 ml-auto">{weather.temperature_c.typical_range}</span>
                                 )}
                               </div>
                             )}
                             <div className="space-y-3">
                               <div className="flex items-center gap-2.5 p-3.5 bg-white/[0.04] rounded-xl border border-white/[0.06] group-hover/climate:border-amber-400/30 transition-all duration-500 hover:bg-gradient-to-r hover:from-amber-400/10 hover:to-amber-400/5">
                                 <div className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_15px_#fbbf24] shrink-0 animate-pulse-soft"></div>
-                                <span className="text-xs font-semibold text-slate-300 uppercase tracking-wide">{weather.conditions_summary || 'Conditions data pending'}</span>
+                                <span className="text-xs font-semibold text-blue-100 uppercase tracking-wide">{weather.conditions_summary || 'Conditions data pending'}</span>
                               </div>
-                              <p className="text-[11px] font-medium text-slate-500 leading-relaxed italic px-1">
+                              <p className="text-[11px] font-medium text-slate-300 leading-relaxed italic px-1">
                                 "{weather.temperature_c?.notes || weather.conditions_summary || "Environmental conditions are optimized for your selected itinerary themes."}"
                               </p>
                             </div>
                             {/* Best Times */}
                             {weather.best_times && weather.best_times.length > 0 && (
                               <div className="space-y-2">
-                                <p className="text-[10px] font-bold text-amber-400/70 uppercase tracking-widest">Best Times</p>
+                                <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">Best Times</p>
                                 <div className="flex flex-wrap gap-1.5">
                                   {weather.best_times.map((t: string, i: number) => (
-                                    <span key={i} className="text-[10px] font-medium text-slate-300 bg-amber-400/10 border border-amber-400/15 rounded-full px-2.5 py-1">{t}</span>
+                                    <span key={i} className="text-[10px] font-medium text-blue-100 bg-amber-400/10 border border-amber-400/15 rounded-full px-2.5 py-1">{t}</span>
                                   ))}
                                 </div>
                               </div>
@@ -1227,10 +1227,10 @@ function App() {
                             {/* Activity Suggestions */}
                             {weather.activity_suggestions && weather.activity_suggestions.length > 0 && (
                               <div className="space-y-2">
-                                <p className="text-[10px] font-bold text-amber-400/70 uppercase tracking-widest">Activities</p>
+                                <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">Activities</p>
                                 <div className="flex flex-wrap gap-1.5">
                                   {weather.activity_suggestions.map((a: string, i: number) => (
-                                    <span key={i} className="text-[10px] font-medium text-slate-300 bg-rose-400/10 border border-rose-400/15 rounded-full px-2.5 py-1">{a}</span>
+                                    <span key={i} className="text-[10px] font-medium text-blue-100 bg-rose-400/10 border border-rose-400/15 rounded-full px-2.5 py-1">{a}</span>
                                   ))}
                                 </div>
                               </div>
@@ -1238,12 +1238,12 @@ function App() {
                             {/* Packing */}
                             {weather.packing && weather.packing.length > 0 && (
                               <div className="space-y-2">
-                                <p className="text-[10px] font-bold text-amber-400/70 uppercase tracking-widest">Packing Tips</p>
+                                <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">Packing Tips</p>
                                 <div className="space-y-1">
                                   {weather.packing.map((p: string, i: number) => (
                                     <div key={i} className="flex items-start gap-2">
                                       <div className="w-1 h-1 rounded-full bg-amber-400 mt-1.5 shrink-0"></div>
-                                      <span className="text-[10px] text-slate-400 leading-relaxed">{p}</span>
+                                      <span className="text-[10px] text-slate-200 leading-relaxed">{p}</span>
                                     </div>
                                   ))}
                                 </div>
