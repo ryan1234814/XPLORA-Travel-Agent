@@ -14,3 +14,11 @@ uvicorn
 mysql-connector-python
 pinecone-client
 langchain-pinecone
+scrapling
+curl_cffi
+browserforge
+msgspec
+orjson
+lxml
+playwright
+patchright

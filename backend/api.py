@@ -170,6 +170,29 @@ class PlanRequest(BaseModel):
                 raise ValueError(f'Invalid accessibility options: {", ".join(invalid)}')
         return v or []
 
+class ItineraryDescriptionRequest(BaseModel):
+    destination: str
+    origin: Optional[str] = ""
+    travel_dates: Optional[str] = ""
+    interests: Optional[List[str]] = None
+    budget: Optional[str] = "Premier"
+    duration: Optional[int] = 3
+
+    @field_validator('destination')
+    @classmethod
+    def validate_dest(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError('Destination is required.')
+        return v.strip()
+
+    @field_validator('duration')
+    @classmethod
+    def validate_dur(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and (v < 1 or v > 14):
+            raise ValueError('Duration must be 1-14')
+        return v
+
+
 class AskPlaceRequest(BaseModel):
     place: str
     question: str
@@ -247,6 +270,41 @@ async def ask_place(req: AskPlaceRequest):
         )
 
 
+@app.post("/api/itinerary-description")
+async def itinerary_description(req: ItineraryDescriptionRequest):
+    """FAST itinerary description with travel details, flight booking details and links via Scrapling."""
+    try:
+        agent_system = get_agent_system()
+        result = agent_system.generate_itinerary_description(
+            destination=req.destination,
+            origin=req.origin or "",
+            travel_dates=req.travel_dates or "",
+            interests=req.interests or [],
+            budget=req.budget or "Premier",
+            duration=req.duration or 3,
+        )
+        return result
+    except Exception as e:
+        print(f"Error in itinerary-description: {str(e)}")
+        raise HTTPException(status_code=500, detail="Itinerary description temporarily unavailable. Try again.")
+
+
+@app.get("/api/scrapling-search")
+async def scrapling_search_endpoint(q: str = "", origin: str = "", destination: str = "", travel_dates: str = ""):
+    """Direct FAST Scrapling search — returns travel details + flight links for any destination."""
+    if not q and not destination:
+        raise HTTPException(status_code=400, detail="Query or destination required")
+    dest = destination or q
+    try:
+        from agents.tools.scrapling_search import scrapling_travel_search
+        agent_system = get_agent_system()  # ensure init
+        data = scrapling_travel_search(dest, origin=origin, travel_dates=travel_dates)
+        return data
+    except Exception as e:
+        print(f"Error in scrapling-search: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/generate-itinerary")
 async def generate_itinerary(req: PlanRequest):
     try:
@@ -282,6 +340,27 @@ async def generate_itinerary(req: PlanRequest):
         
         # Extract the results from agent_outputs
         itinerary_data = final_state.get("agent_outputs", {})
+
+        # Ensure Scrapling FAST travel/flight details are present (fallback enrichment)
+        try:
+            has_flight = False
+            # Check itinerary planner output
+            itin_out = itinerary_data.get("itinerary_planner", {}).get("output", {})
+            if isinstance(itin_out, dict) and itin_out.get("flight_booking_details"):
+                has_flight = True
+            if not has_flight:
+                from agents.tools.scrapling_search import scrapling_travel_search as _sts
+                sc_data = _sts(req.destination, origin=req.origin or "", travel_dates=req.travel_dates or "", interests=req.interests, budget=req.budget)
+                # Attach at top-level and into itinerary_planner for frontend
+                itinerary_data["scrapling_travel_search"] = sc_data
+                if isinstance(itin_out, dict):
+                    itin_out["flight_booking_details"] = itin_out.get("flight_booking_details") or sc_data.get("flight_booking_details", {})
+                    itin_out["hotel_booking_details"] = itin_out.get("hotel_booking_details") or sc_data.get("hotel_booking_details", {})
+                    itin_out["useful_links"] = itin_out.get("useful_links") or sc_data.get("useful_links", [])
+                    itin_out["sources"] = itin_out.get("sources") or sc_data.get("sources", [])[:10]
+                    itin_out["travel_details"] = itin_out.get("travel_details") or sc_data.get("travel_details", "")
+        except Exception as enrich_e:
+            print(f"[WARNING] Post-enrichment failed: {enrich_e}")
         
         # Store in MySQL database
         save_itinerary(

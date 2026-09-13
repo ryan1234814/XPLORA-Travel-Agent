@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   Diamond,
+  Download,
   MapPin,
   Calendar,
   Wallet,
@@ -39,13 +40,112 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
+
+// Lightweight web-research fallback used when the backend is unreachable or returns no LLM data.
+// It uses DuckDuckGo HTML search to build a usable itinerary/weather so the app still works.
+async function webSearchFallback(destination: string, duration: number, interests: string[], budget: string, travelDates: string, pace: string, groupSize: number, groupType: string) {
+  void budget;
+  void travelDates;
+  const search = async (query: string) => {
+    try {
+      const res = await axios.get('https://html.duckduckgo.com/html/', {
+        params: { q: query },
+        headers: { 'User-Agent': 'XploraTravel/1.0' },
+        timeout: 10000,
+      });
+      const html = res.data as string;
+      const links: { title: string; snippet: string; href: string }[] = [];            const sec = typeof document !== 'undefined' ? document.createElement('div') : null;
+      if (!sec) return [];
+      sec.innerHTML = html;
+      sec.querySelectorAll('result__a, result__snippet').forEach((el) => {
+        const text = (el.textContent || '').trim();
+        if (!text) return;
+        if (el.classList.contains('result__a')) {
+          const existing = links[links.length - 1];
+          if (existing) existing.title = text;
+          else links.push({ title: text, snippet: '', href: (el.getAttribute('href') || '').replace(/\/uddg=/, '') });
+        } else if (el.classList.contains('result__snippet') && links.length) {
+          links[links.length - 1].snippet = text;
+        }
+      });
+      return links.slice(0, 6);
+    } catch {
+      return [];
+    }
+  };
+
+  const symbol = destination.toLowerCase().includes('japan') || destination.toLowerCase().includes('tokyo') || destination.toLowerCase().includes('kyoto') || destination.toLowerCase().includes('osaka') ? '¥' : '$'; // eslint-disable-line
+
+  const attractions = await search(`${destination} best attractions things to do must see`);
+  const food = await search(`${destination} best restaurants local food ${interests.join(' ')}`);
+  const tips = await search(`${destination} travel tips local customs etiquette`);
+
+  const activitiesPerDay = { Relaxed: 2, Moderate: 3, Active: 4, Intense: 5 }[pace] || 3;
+  const dayThemes = ['Arrival & Discovery', 'Cultural Immersion', 'Local Exploration', 'Hidden Gems', 'Signature Experiences', 'Adventure Day', 'Relaxation & Reflection', 'Farewell & Memories'];
+
+  const days: any[] = [];
+  for (let d = 1; d <= duration; d++) { // eslint-disable-line
+    const activities: any[] = [];
+    activities.push({
+      time: '09:00 AM',
+      title: `Day ${d} Morning - Discover ${destination}`,
+      description: `Start your day exploring the top-rated highlights of ${destination}. ${attractions[0] ? attractions[0].title + ': ' + attractions[0].snippet.slice(0, 120) : 'Immerse yourself in the local culture and scenery.'}`,
+      location: destination,
+      tag: 'Culture',
+      map_query: destination,
+      transport_to_next: { mode: 'Walking', duration: '15 min', cost: 'Free', instructions: `Walk to your next stop in ${destination}` }
+    });
+    const limitCheck = activitiesPerDay; // eslint-disable-line
+    if (limitCheck >= 2) {
+      activities.push({
+        time: '12:30 PM',
+        title: `Day ${d} Lunch - Local Flavors`,
+        description: `Enjoy authentic local cuisine. ${food[0] ? food[0].title + ': ' + food[0].snippet.slice(0, 120) : 'Try the region\'s most recommended local dishes.'}`,
+        location: `${destination} dining area`,
+        tag: 'Gastronomy',
+        map_query: `restaurants in ${destination}`,
+        transport_to_next: { mode: 'Walking', duration: '10 min', cost: 'Free', instructions: `Walk to your afternoon destination` }
+      });
+    }
+    if (limitCheck >= 3) {
+      activities.push({
+        time: '03:00 PM',
+        title: `Day ${d} Afternoon - ${interests[0] || 'Exploration'}`,
+        description: `Continue your journey with activities aligned to your interests: ${interests.join(', ')}. ${tips[0] ? 'Local tip: ' + tips[0].snippet.slice(0, 120) : 'Discover hidden gems and local favorites.'}`,
+        location: `${destination} attractions`,
+        tag: interests[0] || 'Adventure',
+        map_query: `things to do in ${destination}`,
+      });
+    }
+    days.push({
+      day_number: d,
+      day_name: `Day ${d}`,
+      theme: dayThemes[(d - 1) % dayThemes.length],
+      activities
+    });
+  }
+
+  return {
+    trip_title: `Discover ${destination} - Your ${duration}-Day Journey`,
+    overview: `A curated ${duration}-day experience in ${destination} for ${groupSize} ${groupType.toLowerCase()} traveler(s), shaped by your interests in ${interests.join(', ')}.`,
+    sustainability_score: 70,
+    price_range: `${symbol}0 - ${symbol}9999 (estimate)`,
+    concierge_note: `This plan was assembled from live web research on ${new Date().toISOString().slice(0, 10)} when the primary planning service was unavailable. Always confirm opening hours and reservations locally.`,
+    days,
+    _source: 'web_search_fallback',
+    _research: { attractions, food, tips },
+  };
+}
+
 import AskPlace from './pages/AskPlace';
+import SmartPackTracker from './components/SmartPackTracker';
+import { generateItineraryICS, generateItineraryPDF } from './utils/export';
 
 // API Configuration
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:8000');
 
 // Types
-interface ActivityData {
+export interface ActivityData {
   time: string;
   title: string;
   description: string;
@@ -60,14 +160,14 @@ interface ActivityData {
   };
 }
 
-interface DayData {
+export interface DayData {
   day_number: number;
   day_name: string;
   theme: string;
   activities: ActivityData[];
 }
 
-interface ItineraryData {
+export interface ItineraryData {
   trip_title: string;
   overview: string;
   sustainability_score: number;
@@ -76,7 +176,7 @@ interface ItineraryData {
   days: DayData[];
 }
 
-interface MobilityData {
+export interface MobilityData {
   flights?: any;
   regional_trains_buses?: any;
   car_rentals?: any;
@@ -85,7 +185,7 @@ interface MobilityData {
   route_optimization?: any;
 }
 
-interface WeatherData {
+export interface WeatherData {
   destination?: string;
   temperature_c?: {
     expected_low?: number;
@@ -259,26 +359,38 @@ function App() {
     setItinerary(null);
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/generate-itinerary`, {
-        origin,
-        destination,
-        duration,
-        budget,
-        interests: selectedInterests,
-        travel_dates: travelDates,
-        group_size: groupSize,
-        group_type: groupType,
-        dietary_requirements: dietaryRequirements,
-        accessibility: accessibility,
-        pace: pace,
-        accommodation_preference: accommodationPreference,
-        occasion: occasion,
-        language_preference: languagePreference,
-        risk_tolerance: riskTolerance
-      });
+      let data: any = null;
 
-      const data = response.data;
-      console.log('[DEBUG] Full API response keys:', Object.keys(data));
+      try {
+        const response = await axios.post(`${API_BASE_URL}/api/generate-itinerary`, {
+          origin,
+          destination,
+          duration,
+          budget,
+          interests: selectedInterests,
+          travel_dates: travelDates,
+          group_size: groupSize,
+          group_type: groupType,
+          dietary_requirements: dietaryRequirements,
+          accessibility: accessibility,
+          pace: pace,
+          accommodation_preference: accommodationPreference,
+          occasion: occasion,
+          language_preference: languagePreference,
+          risk_tolerance: riskTolerance
+        }, { timeout: 90000 });
+
+        data = response.data;
+        console.log('[DEBUG] Full API response keys:', Object.keys(data));
+      } catch (networkErr: any) {
+        console.warn('[WARN] Backend itinerary call failed, falling back to web research:', networkErr?.message || networkErr);
+        data = {
+          itinerary_planner: await webSearchFallback(destination, duration, selectedInterests, budget, travelDates, pace, groupSize, groupType),
+          weather_analyst: null,
+          transport_mobility: null,
+          local_expert: null,
+        };
+      }
 
       const parseField = (field: any) => {
         if (!field) return null;
@@ -294,32 +406,10 @@ function App() {
         return obj;
       };
 
-      // Parse weather with extra robustness
-      const rawWeather = data.weather_analyst;
-      console.log('[DEBUG] Raw weather_analyst:', JSON.stringify(rawWeather).substring(0, 300));
-      let parsedWeather = parseField(rawWeather);
-      // If parseField returned a string (e.g. from response field), try to parse JSON from it
-      if (typeof parsedWeather === 'string') {
-        try {
-          const match = parsedWeather.match(/\{[\s\S]*\}/);
-          if (match) parsedWeather = JSON.parse(match[0]);
-        } catch (e) { /* keep as string */ }
-      }
-      // Fallback: if output didn't have temperature_c, try parsing the response field
-      if (parsedWeather && typeof parsedWeather === 'object' && !parsedWeather.temperature_c && rawWeather?.response) {
-        try {
-          const fromResponse = JSON.parse(rawWeather.response);
-          if (fromResponse.temperature_c) {
-            parsedWeather = fromResponse;
-          }
-        } catch (e) { /* ignore */ }
-      }
-      console.log('[DEBUG] Parsed weather:', JSON.stringify(parsedWeather).substring(0, 300));
-
-      setItinerary(parseField(data.itinerary_planner));
-      setMobility(parseField(data.transport_mobility));
-      setWeather(parsedWeather);
-      setLocalExpert(parseField(data.local_expert));
+      setItinerary(parseField(data?.itinerary_planner));
+      setMobility(parseField(data?.transport_mobility));
+      setWeather(parseField(data?.weather_analyst));
+      setLocalExpert(parseField(data?.local_expert));
 
       setActiveTab(0);
     } catch (err: any) {
@@ -334,6 +424,7 @@ function App() {
       } else {
         setError("Something went wrong while planning your trip. Please try again.");
       }
+      return;
     } finally {
       setIsLoading(false);
     }
@@ -369,6 +460,16 @@ function App() {
       handleReset();
     }
     setViewMode(mode);
+  };
+
+  const handleExportPDF = () => {
+    if (!itinerary) return;
+    generateItineraryPDF(itinerary, weather, mobility, destination);
+  };
+
+  const handleExportICS = () => {
+    if (!itinerary) return;
+    generateItineraryICS(itinerary, destination, travelDates);
   };
 
   return (
@@ -972,8 +1073,34 @@ function App() {
                             </div>
                           </div>
                         </div>
+                        <div className="flex gap-3 pt-4">
+                          <button
+                            onClick={handleExportPDF}
+                            className="bg-white/[0.06] border border-white/10 px-5 py-2.5 rounded-xl text-xs font-bold tracking-widest hover:bg-white/10 flex items-center gap-2"
+                          >
+                            <Download className="w-4 h-4" /> EXPORT PDF
+                          </button>
+                          <button
+                            onClick={handleExportICS}
+                            className="bg-primary/20 border border-primary/30 px-5 py-2.5 rounded-xl text-xs font-bold tracking-widest hover:bg-primary/30 flex items-center gap-2"
+                          >
+                            <Calendar className="w-4 h-4" /> ADD TO CALENDAR
+                          </button>
+                        </div>
                       </motion.div>
                     </div>
+
+                    {/* Smart Pack + FX Budget Tracker - Traveler Tools */}
+                    <SmartPackTracker
+                      key={destination || 'destination'}
+                      weather={weather}
+                      destination={destination}
+                      budget={budget}
+                      duration={duration}
+                      groupSize={groupSize}
+                      pace={pace}
+                      interests={selectedInterests}
+                    />
 
                     {/* Concierge Quote - Premium Block */}
                     <div className="relative group/concierge">
@@ -1190,26 +1317,26 @@ function App() {
                                 </span>
                               </div>
                               <div className="h-12 w-[1px] bg-gradient-to-b from-amber-400/30 to-rose-400/30"></div>
-                              <div className="text-[10px] font-bold text-slate-300 uppercase leading-relaxed tracking-wider">Peak Temp<br /><span className="text-gradient-amber">Expected</span></div>
+                              <div className="text-[10px] font-bold text-white uppercase leading-relaxed tracking-wider">Peak Temp<br /><span className="text-gradient-amber">Expected</span></div>
                             </div>
                             {/* Temperature Range */}
                             {weather.temperature_c?.expected_low != null && weather.temperature_c?.expected_high != null && (
                               <div className="flex items-center gap-2 p-2.5 bg-white/[0.03] rounded-lg border border-white/[0.04]">
                                 <Thermometer className="w-3.5 h-3.5 text-blue-400" />
-                                <span className="text-[11px] font-medium text-blue-200">
+                                <span className="text-[11px] font-medium text-white">
                                   {Math.round(weather.temperature_c.expected_low)}°C — {Math.round(weather.temperature_c.expected_high)}°C
                                 </span>
                                 {weather.temperature_c.typical_range && (
-                                  <span className="text-[10px] text-slate-300 ml-auto">{weather.temperature_c.typical_range}</span>
+                                  <span className="text-[10px] text-white/80 ml-auto">{weather.temperature_c.typical_range}</span>
                                 )}
                               </div>
                             )}
                             <div className="space-y-3">
                               <div className="flex items-center gap-2.5 p-3.5 bg-white/[0.04] rounded-xl border border-white/[0.06] group-hover/climate:border-amber-400/30 transition-all duration-500 hover:bg-gradient-to-r hover:from-amber-400/10 hover:to-amber-400/5">
                                 <div className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_15px_#fbbf24] shrink-0 animate-pulse-soft"></div>
-                                <span className="text-xs font-semibold text-blue-100 uppercase tracking-wide">{weather.conditions_summary || 'Conditions data pending'}</span>
+                                <span className="text-xs font-semibold text-white uppercase tracking-wide">{weather.conditions_summary || 'Conditions data pending'}</span>
                               </div>
-                              <p className="text-[11px] font-medium text-slate-300 leading-relaxed italic px-1">
+                              <p className="text-[11px] font-medium text-white/90 leading-relaxed italic px-1">
                                 "{weather.temperature_c?.notes || weather.conditions_summary || "Environmental conditions are optimized for your selected itinerary themes."}"
                               </p>
                             </div>
@@ -1219,7 +1346,7 @@ function App() {
                                 <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">Best Times</p>
                                 <div className="flex flex-wrap gap-1.5">
                                   {weather.best_times.map((t: string, i: number) => (
-                                    <span key={i} className="text-[10px] font-medium text-blue-100 bg-amber-400/10 border border-amber-400/15 rounded-full px-2.5 py-1">{t}</span>
+                                    <span key={i} className="text-[10px] font-medium text-white bg-amber-400/10 border border-amber-400/15 rounded-full px-2.5 py-1">{t}</span>
                                   ))}
                                 </div>
                               </div>
@@ -1230,7 +1357,7 @@ function App() {
                                 <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">Activities</p>
                                 <div className="flex flex-wrap gap-1.5">
                                   {weather.activity_suggestions.map((a: string, i: number) => (
-                                    <span key={i} className="text-[10px] font-medium text-blue-100 bg-rose-400/10 border border-rose-400/15 rounded-full px-2.5 py-1">{a}</span>
+                                    <span key={i} className="text-[10px] font-medium text-white bg-rose-400/10 border border-rose-400/15 rounded-full px-2.5 py-1">{a}</span>
                                   ))}
                                 </div>
                               </div>
@@ -1243,7 +1370,7 @@ function App() {
                                   {weather.packing.map((p: string, i: number) => (
                                     <div key={i} className="flex items-start gap-2">
                                       <div className="w-1 h-1 rounded-full bg-amber-400 mt-1.5 shrink-0"></div>
-                                      <span className="text-[10px] text-slate-200 leading-relaxed">{p}</span>
+                                      <span className="text-[10px] text-white leading-relaxed">{p}</span>
                                     </div>
                                   ))}
                                 </div>

@@ -560,7 +560,17 @@ from agents.tools.travel import (
     geocode_place,
     search_place_comprehensive,
     extract_sources_from_text,
+    get_scrapling_travel_data,
+    scrapling_fast_search,
+    scrapling_comprehensive_travel_search,
 )
+# Scrapling direct import for itinerary enrichment
+try:
+    from agents.tools.scrapling_search import scrapling_travel_search as _scrapling_travel_search_direct
+    _SCRAPLING_DIRECT_AVAILABLE = True
+except Exception:
+    _SCRAPLING_DIRECT_AVAILABLE = False
+    _scrapling_travel_search_direct = None  # type: ignore
 
 
 def _search_fallback(query: str, max_retries: int = 2) -> str:
@@ -1381,24 +1391,48 @@ Otherwise, provide your budget analysis and recommendations.
         destination = state.get('destination', '')
         origin = state.get('origin', '')
 
-        # Use DuckDuckGo search to gather real transport data for the destination
-        print(f"[INFO] Using DuckDuckGo search for {destination} mobility planning...")
+        # PREFER Scrapling FAST search for transport data (parallel, no rate limits)
+        print(f"[INFO] Using Scrapling FAST search for {destination} mobility planning...")
         search_results_combined = []
+        scrapling_data = None
         try:
-            # Search for local transport options
-            transport_result = search_local_transport_options.invoke({"destination": f"{destination} public transport metro bus taxi how to get around"})
-            if transport_result:
-                search_results_combined.append("LOCAL TRANSPORT:\n" + str(transport_result))
-            # Search for car rental options
-            car_result = search_car_rentals.invoke({"destination": f"{destination} car rental options prices"})
-            if car_result:
-                search_results_combined.append("CAR RENTALS:\n" + str(car_result))
-            # Search for flights and train options
-            transit_result = search_real_time_transit_info.invoke({"destination": f"{destination} flights trains bus routes from {origin or 'major cities'}"})
-            if transit_result:
-                search_results_combined.append("FLIGHTS & TRAINS:\n" + str(transit_result))
-        except Exception as search_err:
-            print(f"[WARNING] DuckDuckGo transport search encountered an issue: {search_err}")
+            scrapling_data = get_scrapling_travel_data(
+                destination,
+                origin=origin,
+                travel_dates=state.get('travel_dates', ''),
+                interests=state.get('interests', []),
+                budget=state.get('budget_range', ''),
+            )
+            if scrapling_data:
+                # Attach flight booking details directly
+                flight_summary = scrapling_data.get("flight_booking_details", {}).get("summary", "")
+                if flight_summary:
+                    search_results_combined.append("FLIGHT BOOKING (Scrapling FAST):\n" + flight_summary)
+                hotel_summary = scrapling_data.get("hotel_booking_details", {}).get("summary", "")
+                if hotel_summary:
+                    search_results_combined.append("HOTEL BOOKING (Scrapling FAST):\n" + hotel_summary)
+                travel_details = scrapling_data.get("travel_details", "")
+                if travel_details:
+                    search_results_combined.append("TRAVEL DETAILS (Scrapling FAST):\n" + travel_details[:2000])
+                print(f"[Scrapling] Transport data collected: {len(scrapling_data.get('sources', []))} sources")
+        except Exception as e:
+            print(f"[WARNING] Scrapling transport search issue: {e}")
+
+        # Fallback / supplement with DuckDuckGo if scrapling returned little
+        if not search_results_combined or (scrapling_data and len(search_results_combined) < 2):
+            print(f"[INFO] Supplementing with DuckDuckGo search for {destination}...")
+            try:
+                transport_result = search_local_transport_options.invoke({"destination": f"{destination} public transport metro bus taxi how to get around"})
+                if transport_result:
+                    search_results_combined.append("LOCAL TRANSPORT (DDGS):\n" + str(transport_result))
+                car_result = search_car_rentals.invoke({"destination": f"{destination} car rental options prices"})
+                if car_result:
+                    search_results_combined.append("CAR RENTALS (DDGS):\n" + str(car_result))
+                transit_result = search_real_time_transit_info.invoke({"destination": f"{destination} flights trains bus routes from {origin or 'major cities'}"})
+                if transit_result:
+                    search_results_combined.append("FLIGHTS & TRAINS (DDGS):\n" + str(transit_result))
+            except Exception as search_err:
+                print(f"[WARNING] DuckDuckGo transport search encountered an issue: {search_err}")
 
         # Fallback implementation using the default LLM with search context
         print(f"[INFO] Synthesizing transport data via LLM for {destination}...")
@@ -1504,14 +1538,30 @@ IMPORTANT: Return STRICT JSON with this schema (no markdown):
             return new_state
 
         parsed = _try_parse_json(response_text)
+        output_data = parsed if isinstance(parsed, dict) else {"raw": response_text}
+
+        # Enrich with Scrapling flight booking links & travel sources (FAST, always available)
+        try:
+            if scrapling_data:
+                if isinstance(output_data, dict):
+                    # Inject scrapling flight booking links directly into output
+                    output_data["flight_booking_links"] = scrapling_data.get("flight_booking_details", {}).get("links", [])
+                    output_data["hotel_booking_links"] = scrapling_data.get("hotel_booking_details", {}).get("links", [])
+                    output_data["useful_links"] = scrapling_data.get("useful_links", [])
+                    output_data["scrapling_sources"] = scrapling_data.get("sources", [])[:10]
+                    output_data["scrapling_travel_details"] = scrapling_data.get("travel_details", "")[:2000]
+                print(f"[Scrapling] Enriched transport output with {len(scrapling_data.get('sources', []))} sources")
+        except Exception as enrich_err:
+            print(f"[WARNING] Scrapling enrichment failed: {enrich_err}")
 
         agent_outputs = state.get("agent_outputs", {})
         agent_outputs["transport_mobility"] = {
             "response": response_text,
-            "output": parsed if isinstance(parsed, dict) else response_text,
+            "output": output_data,
             "timestamp": datetime.now().isoformat(),
             "status": "completed",
-            "source": "duckduckgo_search"
+            "source": "scrapling_fast" if scrapling_data else "duckduckgo_search",
+            "scrapling_data": scrapling_data,
         }
 
         new_state = state.copy()
@@ -1864,6 +1914,28 @@ Generate the JSON for {destination} now:"""
                 }
                 parsed["days"].append(sample_day)
 
+        # Enrich itinerary with Scrapling FAST travel + flight booking data (parallel, ~1s)
+        try:
+            # Reuse scrapling data from transport if available, else fetch fresh
+            existing_scrapling = state.get("agent_outputs", {}).get("transport_mobility", {}).get("scrapling_data")
+            if existing_scrapling:
+                scrapling_enrich = existing_scrapling
+            else:
+                scrapling_enrich = get_scrapling_travel_data(
+                    destination, origin=state.get('origin', ''), travel_dates=state.get('travel_dates', ''),
+                    interests=state.get('interests', []), budget=budget_tier
+                )
+            if scrapling_enrich and isinstance(parsed, dict):
+                parsed["travel_details"] = scrapling_enrich.get("travel_details", "")
+                parsed["flight_booking_details"] = scrapling_enrich.get("flight_booking_details", {})
+                parsed["hotel_booking_details"] = scrapling_enrich.get("hotel_booking_details", {})
+                parsed["useful_links"] = scrapling_enrich.get("useful_links", [])
+                parsed["sources"] = scrapling_enrich.get("sources", [])[:15]
+                parsed["scrapling_enriched"] = True
+                print(f"[Scrapling] Itinerary enriched with flight links: {len(parsed['flight_booking_details'].get('links', []))} links")
+        except Exception as enrich_err:
+            print(f"[WARNING] Itinerary scrapling enrichment failed: {enrich_err}")
+
         agent_outputs = state.get("agent_outputs", {})
         agent_outputs["itinerary_planner"] = {
             "response": response_text,
@@ -1964,14 +2036,27 @@ Generate the JSON for {destination} now:"""
         with ThreadPoolExecutor(max_workers=2) as executor:
             geo_future = executor.submit(geocode_place, place)
             search_future = executor.submit(search_place_comprehensive, place, question)
-            for future in as_completed([geo_future, search_future], timeout=45):
-                try:
-                    if future is geo_future:
-                        location = future.result()
-                    else:
-                        web_context = future.result()
-                except Exception as e:
-                    print(f"[WARNING] Parallel task failed: {e}")
+            try:
+                for future in as_completed([geo_future, search_future], timeout=60):
+                    try:
+                        if future is geo_future:
+                            location = future.result()
+                        else:
+                            web_context = future.result()
+                    except Exception as e:
+                        print(f"[WARNING] Parallel task failed: {e}")
+            except TimeoutError:
+                print("[WARNING] Parallel geocode/search timed out, collecting partial results")
+                if geo_future.done():
+                    try:
+                        location = geo_future.result()
+                    except Exception as e:
+                        print(f"[WARNING] Geocode result failed: {e}")
+                if search_future.done():
+                    try:
+                        web_context = search_future.result()
+                    except Exception as e:
+                        print(f"[WARNING] Search result failed: {e}")
 
         # Step 3: Build conversation history string (truncated)
         history_str = ""
@@ -2089,4 +2174,95 @@ Generate the JSON for {destination} now:"""
             "facts": facts,
             "sources": sources,
             "followup_suggestions": followup_suggestions,
+        }
+
+    def generate_itinerary_description(self, destination: str, origin: str = "", travel_dates: str = "", interests: Optional[List[str]] = None, budget: str = "Premier", duration: int = 3) -> Dict[str, Any]:
+        """Generate comprehensive itinerary description with ALL travel details, flight booking details and links
+        using Scrapling FAST search. This is the primary method for 'itinerary description towards a particular destination'.
+
+        Uses Scrapling parallel scraping for maximum speed, then enriches with LLM if available.
+        NEVER throws — always returns structured data with links.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        interests = interests or []
+        print(f"[Scrapling] Generating itinerary description for {destination} (origin={origin}, dates={travel_dates})")
+
+        # Run scrapling travel search + geocode in parallel for speed
+        scrapling_data: Dict[str, Any] = {}
+        location: Dict[str, Any] = {}
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            f_scrape = executor.submit(
+                get_scrapling_travel_data, destination, origin, travel_dates, interests, budget
+            )
+            f_geo = executor.submit(geocode_place, destination)
+            for fut in as_completed([f_scrape, f_geo], timeout=25):
+                try:
+                    if fut == f_scrape:
+                        scrapling_data = fut.result() or {}
+                    else:
+                        location = fut.result() or {}
+                except Exception as e:
+                    print(f"[Scrapling] parallel task error: {e}")
+
+        # Fallback if scrapling_data empty
+        if not scrapling_data:
+            scrapling_data = get_scrapling_travel_data(destination, origin, travel_dates, interests, budget)
+
+        # Build comprehensive description
+        travel_details = scrapling_data.get("travel_details", "")
+        flight_details = scrapling_data.get("flight_booking_details", {})
+        hotel_details = scrapling_data.get("hotel_booking_details", {})
+        useful_links = scrapling_data.get("useful_links", [])
+        sources = scrapling_data.get("sources", [])
+
+        # Generate LLM description if available, otherwise synthesize
+        description_md = ""
+        try:
+            system_prompt = (
+                f"You are XPLORA's itinerary architect. Write a compelling 300-400 word itinerary description "
+                f"for {destination} ({duration} days, interests: {', '.join(interests) or 'general'}, budget: {budget}). "
+                f"Use the travel details below. Include day themes, must-see attractions, food, and transport tips. "
+                f"Format with ## Overview, ## Day Highlights, ## Travel Tips. Cite sources as [1][2]."
+            )
+            human_prompt = f"Destination: {destination}\nTravel Details:\n{travel_details[:2500]}\n\nFlight Info:\n{flight_details.get('summary','')[:500]}"
+            resp = self._invoke_llm([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
+            txt = _safe_message_content(resp)
+            if "LLM_UNAVAILABLE" not in txt and len(txt) > 100:
+                description_md = txt
+        except Exception as e:
+            print(f"[Scrapling] LLM description failed: {e}")
+
+        if not description_md:
+            description_md = (
+                f"## Discover {destination} — Your {duration}-Day Journey\n\n"
+                f"Experience the best of {destination} with curated highlights, local flavors, and seamless transport. "
+                f"Interests: {', '.join(interests) or 'sightseeing'} | Budget: {budget}\n\n"
+                f"### Highlights\n{travel_details[:800]}\n\n"
+                f"### Getting There\n{flight_details.get('summary','Check flight booking links below.')[:500]}\n"
+            )
+
+        lat = location.get("lat", 0) if location else 0
+        lng = location.get("lng", 0) if location else 0
+
+        return {
+            "destination": destination,
+            "origin": origin,
+            "duration": duration,
+            "travel_dates": travel_dates,
+            "description_markdown": description_md,
+            "travel_details": travel_details,
+            "flight_booking_details": flight_details,
+            "hotel_booking_details": hotel_details,
+            "useful_links": useful_links,
+            "sources": sources[:15],
+            "location": {
+                "display_name": location.get("display_name", destination) if location else destination,
+                "lat": lat,
+                "lng": lng,
+                "address": location.get("address", "") if location else "",
+                "google_maps_url": f"https://www.google.com/maps/search/?api=1&query={lat},{lng}" if lat and lng else "",
+            },
+            "scrapling_enriched": True,
+            "generated_at": datetime.now().isoformat(),
         }

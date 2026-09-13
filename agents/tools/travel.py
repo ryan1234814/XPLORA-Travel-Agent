@@ -9,6 +9,23 @@ from datetime import datetime
 from config.langgraph_config import langgraph_config as config
 from config.api_config import api_config
 
+# Scrapling FAST search — import lazily with fallback to DDGS if unavailable
+try:
+    from agents.tools.scrapling_search import (
+        scrapling_search as _scrapling_search,
+        scrapling_search_structured as _scrapling_search_structured,
+        scrapling_travel_search as _scrapling_travel_search,
+        build_flight_booking_links as _build_flight_links,
+        build_hotel_booking_links as _build_hotel_links,
+        build_travel_useful_links as _build_travel_links,
+    )
+    _SCRAPLING_AVAILABLE = True
+except Exception as _e:
+    print(f"[WARNING] Scrapling search not available: {_e}")
+    _SCRAPLING_AVAILABLE = False
+    _scrapling_search = None  # type: ignore
+    _scrapling_travel_search = None  # type: ignore
+
 @tool
 def search_destination_info(query: str):
     """Search for general information about a travel destination including attractions and guides."""
@@ -516,12 +533,14 @@ def _ddgs_search(query: str, max_results: int = 5) -> list:
     """Run a single DDGS search. Returns list of result dicts. Never throws."""
     try:
         with DDGS() as ddgs:
-            return list(ddgs.text(
+            results = list(ddgs.text(
                 query,
                 max_results=max_results,
                 region=config.DUCKDUCKGO_REGION,
                 safesearch=config.DUCKDUCKGO_SAFESEARCH,
             ))
+            print(f"[DEBUG] DDGS search for '{query[:60]}...' returned {len(results)} results")
+            return results
     except Exception as e:
         print(f"[WARNING] DDGS search failed for '{query[:50]}': {e}")
         return []
@@ -529,55 +548,64 @@ def _ddgs_search(query: str, max_results: int = 5) -> list:
 
 def search_place_comprehensive(place: str, question: str) -> str:
     """Perform comprehensive search for a place + question.
-    Runs all 3 searches IN PARALLEL for maximum speed.
+    Runs multiple searches IN PARALLEL for maximum speed.
     Returns formatted string. Never throws.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     all_sources: list = []
 
-    # Define 3 parallel search tasks
-    def search_place_question() -> list:
-        return _ddgs_search(f"{place} {question}", max_results=5)
+    # Build smarter search queries based on the question
+    primary_query = f"{place} {question}"
+    # Second query focuses on practical travel info
+    practical_query = f"{place} travel guide tips best time to visit entry fees opening hours"
+    # Third query: recent/specific info
+    specific_query = f"{place} visitor guide {question} 2024 2025"
 
-    def search_travel_guide() -> list:
-        return _ddgs_search(f"{place} travel guide history entry fee timings accessibility", max_results=5)
+    # Define 3 parallel DDGS search tasks (RAG excluded — too slow on first load)
+    def search_primary() -> list:
+        return _ddgs_search(primary_query, max_results=8)
 
-    def search_rag() -> str:
-        try:
-            result = search_travel_blogs.invoke({"query": f"{place} {question}"})
-            return str(result) if result and "Error" not in str(result) else ""
-        except Exception as e:
-            print(f"[WARNING] RAG search failed: {e}")
-            return ""
+    def search_practical() -> list:
+        return _ddgs_search(practical_query, max_results=5)
 
-    # Execute all 3 in parallel with a generous timeout
+    def search_specific() -> list:
+        return _ddgs_search(specific_query, max_results=5)
+
+    # Execute all 3 DDGS searches in parallel (much faster than RAG)
     with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
-            executor.submit(search_place_question): "place_question",
-            executor.submit(search_travel_guide): "travel_guide",
-            executor.submit(search_rag): "rag",
+            executor.submit(search_primary): "primary",
+            executor.submit(search_practical): "practical",
+            executor.submit(search_specific): "specific",
         }
-        for future in as_completed(futures, timeout=30):
-            try:
-                result = future.result()
-                label = futures[future]
-                if label == "rag":
-                    if result:
-                        all_sources.append({
-                            "title": "Travel Knowledge Base",
-                            "body": result[:800],
-                            "url": "",
-                        })
-                else:
+        try:
+            for future in as_completed(futures, timeout=25):
+                try:
+                    result = future.result()
                     for r in result:
                         all_sources.append({
                             "title": r.get("title", "N/A"),
                             "body": r.get("body", "No details"),
                             "url": r.get("href", ""),
                         })
-            except Exception as e:
-                print(f"[WARNING] Parallel search task failed: {e}")
+                except Exception as e:
+                    print(f"[WARNING] Parallel search task failed: {e}")
+        except TimeoutError:
+            print("[WARNING] Some parallel search tasks timed out, collecting partial results")
+            # Collect results from any futures that already completed
+            for future in futures.values():
+                if future.done():
+                    try:
+                        result = future.result()
+                        for r in result:
+                            all_sources.append({
+                                "title": r.get("title", "N/A"),
+                                "body": r.get("body", "No details"),
+                                "url": r.get("href", ""),
+                            })
+                    except Exception as e:
+                        print(f"[WARNING] Failed to collect timed-out task result: {e}")
 
     # Deduplicate by URL
     seen_urls: set = set()
@@ -650,6 +678,85 @@ def extract_sources_from_text(text: str) -> list:
     return sources
 
 
+@tool
+def scrapling_fast_search(query: str) -> str:
+    """FAST web search using Scrapling (Bing scraping). Faster than DDGS, parallel-friendly."""
+    if _SCRAPLING_AVAILABLE and _scrapling_search:
+        try:
+            return _scrapling_search(query, max_results=5)
+        except Exception as e:
+            print(f"[Scrapling] fast search fallback to DDGS: {e}")
+    # Fallback to DDGS
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=5, region=config.DUCKDUCKGO_REGION, safesearch=config.DUCKDUCKGO_SAFESEARCH))
+            if not results:
+                return f"No results for: {query}"
+            return "\n".join(f"{i}. {r.get('title')}\n   {r.get('body')}\n   Source: {r.get('href')}" for i, r in enumerate(results[:5], 1))
+    except Exception as e:
+        return f"Search error: {e}"
+
+
+@tool
+def scrapling_comprehensive_travel_search(destination: str, origin: str = "", travel_dates: str = "", interests: str = "") -> str:
+    """Comprehensive FAST travel search via Scrapling: attractions, flights, hotels, tips — all in parallel.
+    Returns formatted text including travel details, flight booking details, and links.
+    Preferred tool when generating itinerary description for a destination."""
+    if _SCRAPLING_AVAILABLE and _scrapling_travel_search:
+        try:
+            interests_list = [s.strip() for s in interests.split(",") if s.strip()] if interests else []
+            result = _scrapling_travel_search(destination, origin=origin, travel_dates=travel_dates, interests=interests_list)
+            parts = [
+                f"=== TRAVEL DETAILS FOR {destination} ===",
+                result.get("travel_details", ""),
+                "\n=== FLIGHT BOOKING DETAILS ===",
+                result["flight_booking_details"]["summary"],
+                "\n=== HOTEL BOOKING DETAILS ===",
+                result["hotel_booking_details"]["summary"],
+                "\n=== USEFUL LINKS ===",
+                "\n".join(f"• {l['title']}: {l['url']}" for l in result.get("useful_links", [])),
+            ]
+            return "\n".join(parts)
+        except Exception as e:
+            print(f"[Scrapling] comprehensive search failed: {e}")
+    # Fallback to DDGS-based searches
+    try:
+        q = f"{destination} travel guide {interests}"
+        with DDGS() as ddgs:
+            results = list(ddgs.text(q, max_results=5, region=config.DUCKDUCKGO_REGION, safesearch=config.DUCKDUCKGO_SAFESEARCH))
+            base = "\n".join(f"{i}. {r.get('title')}\n   {r.get('body')}\n   Source: {r.get('href')}" for i, r in enumerate(results[:5], 1)) if results else f"No results for {destination}"
+            links = ""
+            if _SCRAPLING_AVAILABLE:
+                from agents.tools.scrapling_search import build_flight_booking_links
+                fl = build_flight_booking_links(origin, destination, travel_dates)
+                links = "\nFlight Booking Links:\n" + "\n".join(f"• {l['title']}: {l['url']}" for l in fl)
+            return base + links
+    except Exception as e:
+        return f"Search error: {e}"
+
+
+def get_scrapling_travel_data(destination: str, origin: str = "", travel_dates: str = "", interests: Optional[List[str]] = None, budget: str = "") -> Dict[str, Any]:
+    """Non-tool helper: returns structured scrapling travel data dict (for agent use). Never throws."""
+    if _SCRAPLING_AVAILABLE and _scrapling_travel_search:
+        try:
+            return _scrapling_travel_search(destination, origin=origin, travel_dates=travel_dates, interests=interests or [], budget=budget)
+        except Exception as e:
+            print(f"[Scrapling] get_travel_data failed: {e}")
+    # Minimal fallback
+    from agents.tools.scrapling_search import build_flight_booking_links, build_hotel_booking_links, build_travel_useful_links, build_top_flight_recommendations
+    return {
+        "destination": destination,
+        "origin": origin,
+        "travel_dates": travel_dates,
+        "travel_details": f"Travel details for {destination} (fallback)",
+        "flight_booking_details": {"summary": "", "links": build_flight_booking_links(origin, destination, travel_dates), "scraped_results": [], "top_flight_recommendations": build_top_flight_recommendations(origin, destination, travel_dates, budget)},
+        "hotel_booking_details": {"summary": "", "links": build_hotel_booking_links(destination, budget)},
+        "useful_links": build_travel_useful_links(destination),
+        "sources": [],
+        "raw_results": "",
+    }
+
+
 # Export all tools in a single list
 ALL_TOOLS = [
     search_destination_info,
@@ -667,5 +774,7 @@ ALL_TOOLS = [
     search_local_transport_options,
     search_car_rentals,
     search_real_time_transit_info,
-    search_travel_blogs
+    search_travel_blogs,
+    scrapling_fast_search,
+    scrapling_comprehensive_travel_search,
 ]
