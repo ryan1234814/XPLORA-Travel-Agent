@@ -36,7 +36,9 @@ import {
   Shield,
   Sparkles,
   Smile,
-  Thermometer
+  Thermometer,
+  SlidersHorizontal,
+  ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
@@ -247,6 +249,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [expandedMobility, setExpandedMobility] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'itinerary' | 'ask'>('itinerary');
+  const [showMorePrefs, setShowMorePrefs] = useState(false);
 
   const toggleInterest = (id: string) => {
     setSelectedInterests(prev =>
@@ -501,25 +504,58 @@ function App() {
       <div className="glow-orb glow-orb--accent" style={{ top: '60%', right: '-5%' }}></div>
       <div className="glow-orb glow-orb--amber" style={{ bottom: '10%', left: '30%' }}></div>
 
-      <div className="flex flex-col md:flex-row min-h-screen md:h-screen md:overflow-hidden">
-        {/* Sidebar */}
-        <aside className="w-full md:w-80 bg-[#0c0e12] border-b md:border-b-0 md:border-r border-white/5 flex flex-col md:shrink-0 z-20 relative md:h-full">
-          {/* Sidebar gradient accent line */}
-          <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-primary via-teal via-amber to-rose opacity-60"></div>
-          <div className="p-8 pb-4 flex items-center gap-4 relative">
-            <div className="absolute inset-x-6 -bottom-2 h-[1px] bg-gradient-to-r from-transparent via-primary/30 via-teal/20 via-amber/20 to-transparent"></div>
-            <div className="bg-gradient-to-br from-primary/25 via-teal/15 to-secondary/20 p-3 rounded-2xl border border-primary/10 shadow-[0_0_30px_rgba(56,189,248,0.2)]">
-              <Diamond className="w-7 h-7 text-primary drop-shadow-[0_0_8px_rgba(56,189,248,0.5)]" />
+      {/* Top Header Bar: branding + view toggle */}
+      <header className="sticky top-0 z-30 bg-[#0c0e12]/90 backdrop-blur-md border-b border-white/5 relative">
+        <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-primary via-teal via-amber to-rose opacity-60"></div>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="bg-gradient-to-br from-primary/25 via-teal/15 to-secondary/20 p-2.5 rounded-2xl border border-primary/10 shadow-[0_0_30px_rgba(56,189,248,0.2)]">
+              <Diamond className="w-6 h-6 text-primary drop-shadow-[0_0_8px_rgba(56,189,248,0.5)]" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-white">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white leading-tight">
                 <span className="text-gradient-shimmer">XPLORA</span>
               </h1>
-              <p className="text-[10px] text-slate-500 italic tracking-[0.15em] mt-0.5">Intelligent Travel Architect</p>
+              <p className="text-[9px] sm:text-[10px] text-slate-500 italic tracking-[0.15em]">Intelligent Travel Architect</p>
             </div>
           </div>
+          {/* View mode toggle */}
+          <div className="flex gap-2 shrink-0">
+            <button
+              onClick={() => handleResetAndSwitch('itinerary')}
+              className={`px-3 sm:px-4 py-2 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all duration-300 border ${viewMode === 'itinerary'
+                ? 'bg-gradient-to-br from-primary/25 to-primary/10 border-primary/50 text-white shadow-[0_0_15px_rgba(56,189,248,0.1)]'
+                : 'bg-white/[0.04] border-white/[0.06] text-slate-400 hover:bg-white/[0.08] hover:text-slate-300'
+              }`}
+            >
+              <span className="flex items-center justify-center gap-1.5">
+                <Diamond className="w-3.5 h-3.5" />
+                Itinerary
+              </span>
+            </button>
+            <button
+              onClick={() => handleResetAndSwitch('ask')}
+              className={`px-3 sm:px-4 py-2 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all duration-300 border ${viewMode === 'ask'
+                ? 'bg-gradient-to-br from-teal/25 to-teal/10 border-teal/50 text-white shadow-[0_0_15px_rgba(45,212,191,0.1)]'
+                : 'bg-white/[0.04] border-white/[0.06] text-slate-400 hover:bg-white/[0.08] hover:text-slate-300'
+              }`}
+            >
+              <span className="flex items-center justify-center gap-1.5">
+                <Search className="w-3.5 h-3.5" />
+                Ask
+              </span>
+            </button>
+          </div>
+        </div>
+      </header>
 
-          <div className="md:flex-1 md:overflow-y-auto px-6 py-4 space-y-6">
+      {/* Trip Planner Form — full width, booking-style */}
+      {viewMode === 'itinerary' && (
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-6">
+        <div className="bg-[#0c0e12]/70 border border-white/10 rounded-2xl p-5 sm:p-6 space-y-5 relative">
+          <div className="absolute top-0 left-6 right-6 h-[1px] bg-gradient-to-r from-transparent via-primary/30 to-transparent"></div>
+          {/* Row 1: primary fields */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] ml-1">Origin (Optional)</label>
               <div className="relative group input-glow rounded-xl">
@@ -587,10 +623,12 @@ function App() {
               </select>
               <InlineError field="budget" />
             </div>
+          </div>
 
-            <div className="space-y-3">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] ml-1">Focus</label>
-              <div className="grid grid-cols-2 gap-2">
+          {/* Focus */}
+          <div className="space-y-3">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] ml-1">Focus</label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
                 {interestsOptions.map((item) => (
                   <button
                     key={item.id}
@@ -608,11 +646,10 @@ function App() {
                 ))}
               </div>
               <InlineError field="interests" />
-            </div>
+          </div>
 
-            {/* Divider */}
-            <div className="h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
-
+          {/* Row 2: trip logistics */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
             {/* Travel Dates */}
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] ml-1">Travel Dates</label>
@@ -665,9 +702,6 @@ function App() {
               </div>
             </div>
 
-            {/* Divider */}
-            <div className="h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
-
             {/* Pace */}
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] ml-1">Pace</label>
@@ -691,9 +725,6 @@ function App() {
               <InlineError field="pace" />
             </div>
 
-            {/* Divider */}
-            <div className="h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
-
             {/* Dietary Requirements */}
             <div className="space-y-3">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] ml-1">Dietary Needs</label>
@@ -713,10 +744,21 @@ function App() {
               </div>
               <InlineError field="dietaryRequirements" />
             </div>
+          </div>
 
-            {/* Divider */}
-            <div className="h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+          {/* More trip preferences (collapsible) */}
+          <button
+            type="button"
+            onClick={() => setShowMorePrefs(v => !v)}
+            className="flex items-center gap-2 text-[11px] font-bold text-slate-400 uppercase tracking-[0.15em] hover:text-slate-200 transition-colors"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            More trip preferences
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${showMorePrefs ? 'rotate-180' : ''}`} />
+          </button>
 
+          {showMorePrefs && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
             {/* Accommodation Preference */}
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] ml-1">Accommodation</label>
@@ -734,9 +776,6 @@ function App() {
               </select>
               <InlineError field="accommodationPreference" />
             </div>
-
-            {/* Divider */}
-            <div className="h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
 
             {/* Accessibility */}
             <div className="space-y-3">
@@ -758,9 +797,6 @@ function App() {
               <InlineError field="accessibility" />
             </div>
 
-            {/* Divider */}
-            <div className="h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
-
             {/* Special Occasion */}
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] ml-1">Special Occasion</label>
@@ -779,9 +815,6 @@ function App() {
               <InlineError field="occasion" />
             </div>
 
-            {/* Divider */}
-            <div className="h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
-
             {/* Language Preference */}
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] ml-1">Language</label>
@@ -799,9 +832,6 @@ function App() {
               </select>
               <InlineError field="languagePreference" />
             </div>
-
-            {/* Divider */}
-            <div className="h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
 
             {/* Risk Tolerance */}
             <div className="space-y-2">
@@ -824,41 +854,14 @@ function App() {
               <InlineError field="riskTolerance" />
             </div>
           </div>
+          )}
 
-          <div className="p-6 pt-2 space-y-3 border-t border-white/5 md:mt-auto">
-            {/* View mode toggle */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleResetAndSwitch('itinerary')}
-                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all duration-300 border ${viewMode === 'itinerary'
-                  ? 'bg-gradient-to-br from-primary/25 to-primary/10 border-primary/50 text-white shadow-[0_0_15px_rgba(56,189,248,0.1)]'
-                  : 'bg-white/[0.04] border-white/[0.06] text-slate-400 hover:bg-white/[0.08] hover:text-slate-300'
-                }`}
-              >
-                <span className="flex items-center justify-center gap-1.5">
-                  <Diamond className="w-3.5 h-3.5" />
-                  Itinerary
-                </span>
-              </button>
-              <button
-                onClick={() => handleResetAndSwitch('ask')}
-                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all duration-300 border ${viewMode === 'ask'
-                  ? 'bg-gradient-to-br from-teal/25 to-teal/10 border-teal/50 text-white shadow-[0_0_15px_rgba(45,212,191,0.1)]'
-                  : 'bg-white/[0.04] border-white/[0.06] text-slate-400 hover:bg-white/[0.08] hover:text-slate-300'
-                }`}
-              >
-                <span className="flex items-center justify-center gap-1.5">
-                  <Search className="w-3.5 h-3.5" />
-                  Ask
-                </span>
-              </button>
-            </div>
-            {viewMode === 'itinerary' && (
-              <>
-              <button
-                onClick={handleGenerate}
+          {/* Submit buttons */}
+          <div className="flex flex-col sm:flex-row gap-3 pt-1">
+            <button
+              onClick={handleGenerate}
               disabled={isLoading}
-              className="w-full text-white font-bold py-4 px-6 rounded-xl shadow-[0_5px_25px_rgba(56,189,248,0.3)] hover:shadow-[0_8px_40px_rgba(56,189,248,0.5)] hover:shadow-[0_0_30px_rgba(45,212,191,0.2)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 disabled:opacity-50 disabled:translate-y-0 flex items-center justify-center gap-2.5 tracking-[0.12em] text-xs relative overflow-hidden group/btn"
+              className="flex-1 text-white font-bold py-4 px-6 rounded-xl shadow-[0_5px_25px_rgba(56,189,248,0.3)] hover:shadow-[0_8px_40px_rgba(56,189,248,0.5)] hover:shadow-[0_0_30px_rgba(45,212,191,0.2)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 disabled:opacity-50 disabled:translate-y-0 flex items-center justify-center gap-2.5 tracking-[0.12em] text-xs relative overflow-hidden group/btn"
               style={{ background: 'linear-gradient(135deg, #38bdf8 0%, #0284c7 25%, #2dd4bf 65%, #0d9488 100%)', backgroundSize: '200% 200%', animation: 'gradient-shift 4s ease-in-out infinite' }}
             >
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent opacity-0 group-hover/btn:opacity-100 transition-opacity duration-700 -skew-x-12 translate-x-[-100%] group-hover/btn:translate-x-[100%] duration-1000"></div>
@@ -877,17 +880,17 @@ function App() {
             </button>
             <button
               onClick={handleReset}
-              className="w-full bg-white/[0.04] text-slate-400 font-bold py-3.5 px-6 rounded-xl hover:bg-white/[0.08] hover:text-slate-300 hover:border-primary/20 transition-all duration-300 text-xs uppercase tracking-widest border border-white/[0.06] hover:border-teal/20 group/reset"
+              className="w-full sm:w-auto bg-white/[0.04] text-slate-400 font-bold py-4 sm:py-3.5 px-8 rounded-xl hover:bg-white/[0.08] hover:text-slate-300 hover:border-primary/20 transition-all duration-300 text-xs uppercase tracking-widest border border-white/[0.06] hover:border-teal/20 group/reset"
             >
               <span className="group-hover/reset:bg-gradient-to-r group-hover/reset:from-slate-300 group-hover/reset:to-slate-400 inline-block transition-all duration-300">RESET</span>
             </button>
-            </>
-            )}
           </div>
-        </aside>
+        </div>
+      </section>
+      )}
 
-        {/* Main Content Area */}
-        <main className="flex-1 md:overflow-y-auto scroll-smooth relative">
+      {/* Main Content Area */}
+      <main className="max-w-6xl w-full mx-auto px-4 sm:px-6 pb-16 scroll-smooth relative">
           {viewMode === 'ask' ? (
             <AskPlace />
           ) : (
@@ -1022,7 +1025,7 @@ function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 key="itinerary"
-                className="p-10 lg:p-20 pb-32"
+                className="py-8"
               >
                 <div className="max-w-7xl mx-auto grid grid-cols-1 xl:grid-cols-4 gap-16">
                   {/* Left Column (3/4) - Main Itinerary */}
@@ -1797,8 +1800,7 @@ function App() {
               </motion.div>
             )}
           </AnimatePresence>
-        </main>
-      </div>
+      </main>
     </div>
   );
 }
