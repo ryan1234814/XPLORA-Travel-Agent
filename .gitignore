@@ -5,3 +5,7 @@ test_results_*.txt
 .claude/
 node_modules
 dist/
+.vercel
+.env*
+
+.vercel-tmp/

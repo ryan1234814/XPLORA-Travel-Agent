@@ -207,11 +207,11 @@ The canonical setup is **frontend on Vercel + backend on Render** — see `deplo
 
 ### Render (Backend only)
 
-The project includes a `render.yaml` blueprint that provisions **only** the `xplora-backend` Python web service (Python 3.12 via `PYTHON_VERSION`, health check at `/`). Set the required environment variables in the Render dashboard when the blueprint prompts for them.
+The project includes a `render.yaml` blueprint that provisions **only** the `xplora-backend` Python web service (Python 3.12 via `PYTHON_VERSION`, health check at `/`; live URL `https://xplora-backend-b3gn.onrender.com` — the suffix is Render's, not part of the service name). Set the required environment variables in the Render dashboard when the blueprint prompts for them.
 
 ### Vercel (Frontend)
 
-The `vercel.json` configuration builds and hosts the React frontend. You **must** set `VITE_API_BASE_URL` in the Vercel project environment variables to the Render backend URL (e.g. `https://xplora-backend.onrender.com`) — it is baked in at build time, so redeploy after changing it. Without it, production API calls fail and the browser console logs an explicit error.
+The `vercel.json` configuration builds and hosts the React frontend. You **must** set `VITE_API_BASE_URL` in the Vercel project environment variables to the Render backend URL (`https://xplora-backend-b3gn.onrender.com`) — it is baked in at build time, so redeploy after changing it. Without it, production API calls fail and the browser console logs an explicit error.
 
 ---
 

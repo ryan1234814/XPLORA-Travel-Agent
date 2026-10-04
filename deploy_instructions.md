@@ -12,7 +12,7 @@ Render will read the `render.yaml` specification in the root of the repository t
 1. Sign in to your [Render Dashboard](https://dashboard.render.com).
 2. Click **New +** in the top right, then select **Blueprint**.
 3. Connect your GitHub repository (`XPLORA-Travel-Agent`).
-4. Render will auto-detect the service described in `render.yaml` (named `xplora-backend`, Python 3.12, health check at `/`).
+4. Render will auto-detect the service described in `render.yaml` (service name `xplora-backend`, Python 3.12, health check at `/`). The already-running instance is reachable at `https://xplora-backend-b3gn.onrender.com` — the `-b3gn` part is a URL suffix Render added, so **do not** put the suffix into `render.yaml`'s `name`, or Render will create a duplicate service.
 5. Render will prompt you to input the values for the following synchronized environment variables:
    - **Required:**
      - `GROQ_API_KEY`: Your Groq platform key.
@@ -25,7 +25,7 @@ Render will read the `render.yaml` specification in the root of the repository t
      - `EXCHANGERATE_API_KEY`: Currency conversion.
      - `PINECONE_API_KEY`: RAG knowledge base for travel blogs.
 6. Click **Apply**. Render will automatically provision the service, install requirements, boot uvicorn, and verify the `/` health endpoint.
-7. **Copy the Web Service URL** (e.g. `https://xplora-backend.onrender.com`). You will need this for the Vercel frontend.
+7. **Copy the Web Service URL** (currently `https://xplora-backend-b3gn.onrender.com`). You will need this for the Vercel frontend. Note: this repo contains **two** Render services — the live `xplora-backend-b3gn` one and a suspended `xplora-backend` one returning HTTP 503; keep only the live service.
 
 ### 🗄️ Database Setup:
 Since Render does not host MySQL natively for free, you can easily set up a free cloud MySQL instance:
@@ -49,7 +49,7 @@ Vercel will build and host your Vite/React static assets.
    - **Output Directory**: `dist` (Default).
 5. Open **Environment Variables** and add the following variable (⚠️ **required — the app will not work without it**):
    - **Key**: `VITE_API_BASE_URL`
-   - **Value**: `https://your-backend-url.onrender.com` (paste your Render backend URL copied in Step 1).
+   - **Value**: `https://xplora-backend-b3gn.onrender.com` (your Render backend URL copied in Step 1; already configured in the `xplora-travel-agent` project).
    - Note: Vite bakes this value in **at build time**. If your backend URL changes, update the variable and **redeploy** Vercel.
 6. Click **Deploy**. Vercel will install dependencies, build the client, and serve the application!
 
@@ -57,7 +57,7 @@ Vercel will build and host your Vite/React static assets.
 
 ## ✅ 3. Post-Deploy Verification Checklist
 
-1. **Backend health**: Open `https://your-backend-url.onrender.com/` — it should return JSON like `{"status": "ok", "service": "xplora-backend", ...}` with HTTP 200. Render keeps the service "Live" only if this check passes.
+1. **Backend health**: Open `https://xplora-backend-b3gn.onrender.com/` — it should return JSON like `{"status": "ok", "service": "xplora-backend", ...}` with HTTP 200. Render keeps the service "Live" only if this check passes.
 2. **Frontend wiring**: Open the live Vercel URL, start a trip request, and check the browser Network tab — every `/api/*` request must go to `*.onrender.com`, **not** the Vercel domain. If a console error says `VITE_API_BASE_URL is not set`, add the env var in Vercel and redeploy.
 3. **CORS**: Requests succeed from the Vercel origin (the backend allows all origins via `CORSMiddleware`).
 4. **Database**: Itinerary generation and trip ratings persist — confirm the remote MySQL instance accepts connections from Render (allow-list Render's egress or use `0.0.0.0/0` for a demo).
