@@ -546,6 +546,41 @@ def _ddgs_search(query: str, max_results: int = 5) -> list:
         return []
 
 
+# Generic words that must NOT count as evidence of relevance
+_RELEVANCE_STOPWORDS = {
+    "nearby", "near", "best", "what", "where", "when", "how", "which", "does", "any",
+    "the", "for", "with", "about", "from", "there", "here", "options", "option",
+    "place", "places", "travel", "guide", "tips", "visit", "visitor", "info",
+    "information", "opening", "hours", "entry", "fees", "time", "times", "2024",
+    "2025", "good", "go", "get", "are", "can", "you",
+}
+
+
+def _is_relevant(result: dict, keywords: List[str]) -> bool:
+    """Reject junk results (e.g. dictionary definitions) with zero keyword overlap."""
+    text = f"{result.get('title', '')} {result.get('body', '')} {result.get('href', '')}".lower()
+    return any(k in text for k in keywords)
+
+
+def _search_one(query: str, max_results: int = 5) -> list:
+    """Scrapling Bing first (reliable from datacenter IPs), DDGS as fallback."""
+    if _SCRAPLING_AVAILABLE and _scrapling_search_structured:
+        try:
+            results = _scrapling_search_structured(query, max_results=max_results)
+            if results:
+                return [
+                    {
+                        "title": r.get("title", "N/A"),
+                        "body": r.get("body", "No details"),
+                        "href": r.get("href", ""),
+                    }
+                    for r in results
+                ]
+        except Exception as e:
+            print(f"[WARNING] Scrapling search failed for '{query[:50]}': {e}")
+    return _ddgs_search(query, max_results=max_results)
+
+
 def search_place_comprehensive(place: str, question: str) -> str:
     """Perform comprehensive search for a place + question.
     Runs multiple searches IN PARALLEL for maximum speed.
@@ -562,17 +597,34 @@ def search_place_comprehensive(place: str, question: str) -> str:
     # Third query: recent/specific info
     specific_query = f"{place} visitor guide {question} 2024 2025"
 
-    # Define 3 parallel DDGS search tasks (RAG excluded — too slow on first load)
+    # Keywords used to drop junk results (dictionary definitions, ads, etc.)
+    keyword_tokens = [
+        t for t in re.findall(r"[a-z0-9]+", f"{place} {question}".lower())
+        if len(t) > 3 and t not in _RELEVANCE_STOPWORDS
+    ]
+    keywords = [place.lower().strip()] + keyword_tokens
+
+    def _collect(results: list) -> None:
+        for r in results:
+            if not _is_relevant(r, keywords):
+                continue
+            all_sources.append({
+                "title": r.get("title", "N/A"),
+                "body": r.get("body", "No details"),
+                "url": r.get("href", ""),
+            })
+
+    # Define 3 parallel search tasks (RAG excluded — too slow on first load)
     def search_primary() -> list:
-        return _ddgs_search(primary_query, max_results=8)
+        return _search_one(primary_query, max_results=8)
 
     def search_practical() -> list:
-        return _ddgs_search(practical_query, max_results=5)
+        return _search_one(practical_query, max_results=5)
 
     def search_specific() -> list:
-        return _ddgs_search(specific_query, max_results=5)
+        return _search_one(specific_query, max_results=5)
 
-    # Execute all 3 DDGS searches in parallel (much faster than RAG)
+    # Execute all 3 searches in parallel (much faster than RAG)
     with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
             executor.submit(search_primary): "primary",
@@ -583,12 +635,7 @@ def search_place_comprehensive(place: str, question: str) -> str:
             for future in as_completed(futures, timeout=25):
                 try:
                     result = future.result()
-                    for r in result:
-                        all_sources.append({
-                            "title": r.get("title", "N/A"),
-                            "body": r.get("body", "No details"),
-                            "url": r.get("href", ""),
-                        })
+                    _collect(result)
                 except Exception as e:
                     print(f"[WARNING] Parallel search task failed: {e}")
         except TimeoutError:
@@ -598,12 +645,7 @@ def search_place_comprehensive(place: str, question: str) -> str:
                 if future.done():
                     try:
                         result = future.result()
-                        for r in result:
-                            all_sources.append({
-                                "title": r.get("title", "N/A"),
-                                "body": r.get("body", "No details"),
-                                "url": r.get("href", ""),
-                            })
+                        _collect(result)
                     except Exception as e:
                         print(f"[WARNING] Failed to collect timed-out task result: {e}")
 

@@ -2078,8 +2078,10 @@ Generate the JSON for {destination} now:"""
         truncated_context = web_context[:3000] if len(web_context) > 3000 else web_context
 
         system_prompt = (
-            "You are XPLORA, an expert travel assistant. Answer from the web context below. "
-            "Cite sources as [1][2]. If info missing, say 'Not found'. "
+            "You are XPLORA, an expert travel assistant. Answer from the web context below when it is relevant. "
+            "If the web context is empty, irrelevant, or says no results were found, answer from your own travel "
+            "knowledge and add one short italic note that details should be verified. NEVER reply with just 'Not found'. "
+            "Cite sources as [1][2] only when web context was used. "
             "Format: ## Direct Answer, ## Key Details (bullets), ## Practical Info."
         )
 
