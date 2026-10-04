@@ -203,7 +203,7 @@ export default function Landing() {
           >
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 -skew-x-12 translate-x-[-100%] group-hover:translate-x-[100%] duration-1000" />
             <Zap className="w-5 h-5 relative z-10" />
-            <span className="relative z-10">EXPLORE THE APP</span>
+            <span className="relative z-10">VIEW THE APPLICATION</span>
             <ArrowRight className="w-5 h-5 relative z-10 group-hover:translate-x-1 transition-transform duration-300" />
           </button>
 
@@ -413,7 +413,7 @@ export default function Landing() {
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 -skew-x-12 translate-x-[-100%] group-hover:translate-x-[100%] duration-1000" />
                 <Zap className="w-5 h-5 relative z-10" />
-                <span className="relative z-10">EXPLORE THE APP</span>
+                <span className="relative z-10">VIEW THE APPLICATION</span>
                 <ArrowRight className="w-5 h-5 relative z-10 group-hover:translate-x-1 transition-transform duration-300" />
               </button>
             </div>

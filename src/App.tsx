@@ -250,6 +250,7 @@ function App() {
   const [expandedMobility, setExpandedMobility] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'itinerary' | 'ask'>('itinerary');
   const [showMorePrefs, setShowMorePrefs] = useState(false);
+  const [appRevealed, setAppRevealed] = useState(false);
 
   const toggleInterest = (id: string) => {
     setSelectedInterests(prev =>
@@ -504,6 +505,8 @@ function App() {
       <div className="glow-orb glow-orb--accent" style={{ top: '60%', right: '-5%' }}></div>
       <div className="glow-orb glow-orb--amber" style={{ bottom: '10%', left: '30%' }}></div>
 
+      {appRevealed ? (
+      <>
       {/* Top Header Bar: branding + view toggle */}
       <header className="sticky top-0 z-30 bg-[#0c0e12]/90 backdrop-blur-md border-b border-white/5 relative">
         <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-primary via-teal via-amber to-rose opacity-60"></div>
@@ -906,26 +909,18 @@ function App() {
                 <div className="ambient-glow"></div>
                 <div className="ambient-glow--bottom"></div>
                 
-                <div className="relative mb-14">
-                  <div className="absolute inset-0 bg-primary blur-[120px] opacity-25 animate-pulse-soft"></div>
-                  <motion.div
-                    animate={{ y: [0, -12, 0] }}
-                    transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-                    className="bg-gradient-to-br from-primary/15 via-primary/5 to-secondary/10 p-12 rounded-[3rem] border border-primary/20 shadow-2xl relative z-10 backdrop-blur-xl"
-                  >
-                    <div className="absolute inset-0 rounded-[3rem] bg-gradient-to-br from-primary/10 to-transparent opacity-50"></div>
-                    <Diamond className="w-24 h-24 text-primary relative z-10 drop-shadow-[0_0_20px_rgba(56,189,248,0.4)]" />
-                  </motion.div>
+                <div className="relative mb-10">
+                  <div className="bg-gradient-to-br from-primary/15 via-primary/5 to-secondary/10 p-6 rounded-3xl border border-primary/20 relative z-10">
+                    <Diamond className="w-12 h-12 text-primary" />
+                  </div>
                 </div>
-                
-                <h2 className="text-6xl md:text-7xl font-bold mb-6 text-white leading-tight tracking-tight">
-                  Craft Your{' '}
-                  <span className="text-gradient-rainbow italic">Bespoke</span>
-                  {' '}Narrative
+
+                <h2 className="text-2xl md:text-3xl font-bold mb-4 text-white tracking-tight">
+                  Design your journey above
                 </h2>
-                <p className="text-lg md:text-xl text-slate-400 mb-14 leading-relaxed font-light max-w-2xl">
-                  Xplora transcends standard planning. We curate intelligent travel experiences
-                  that resonate with your soul and define your legacy.
+                <p className="text-base text-slate-400 leading-relaxed font-light max-w-xl">
+                  Fill in the trip form and hit DESIGN ITINERARY — or switch to ASK to question
+                  the travel brain about any place on Earth.
                 </p>
                 
 
@@ -1801,6 +1796,70 @@ function App() {
             )}
           </AnimatePresence>
       </main>
+      </>
+      ) : (
+      /* ===== Landing gate: hero + VIEW THE APPLICATION ===== */
+      <section className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          className="relative mb-14"
+        >
+          <div className="absolute inset-0 bg-primary blur-[120px] opacity-25 animate-pulse-soft"></div>
+          <motion.div
+            animate={{ y: [0, -12, 0] }}
+            transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+            className="bg-gradient-to-br from-primary/15 via-primary/5 to-secondary/10 p-12 rounded-[3rem] border border-primary/20 shadow-2xl relative z-10 backdrop-blur-xl"
+          >
+            <div className="absolute inset-0 rounded-[3rem] bg-gradient-to-br from-primary/10 to-transparent opacity-50"></div>
+            <Diamond className="w-24 h-24 text-primary relative z-10 drop-shadow-[0_0_20px_rgba(56,189,248,0.4)]" />
+          </motion.div>
+        </motion.div>
+
+        <motion.h2
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
+          className="text-5xl md:text-7xl font-bold mb-6 text-white leading-tight tracking-tight"
+        >
+          Craft Your{' '}
+          <span className="text-gradient-rainbow italic">Bespoke</span>
+          {' '}Narrative
+        </motion.h2>
+
+        <motion.p
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+          className="text-lg md:text-xl text-slate-400 mb-14 leading-relaxed font-light max-w-2xl"
+        >
+          Xplora transcends standard planning. We curate intelligent travel experiences
+          that resonate with your soul and define your legacy.
+        </motion.p>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.45, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <button
+            onClick={() => setAppRevealed(true)}
+            className="group relative text-white font-bold py-4 px-10 rounded-2xl shadow-[0_5px_30px_rgba(56,189,248,0.35)] hover:shadow-[0_8px_50px_rgba(56,189,248,0.55)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 flex items-center gap-3 tracking-[0.12em] text-sm overflow-hidden"
+            style={{
+              background: 'linear-gradient(135deg, #38bdf8 0%, #0284c7 25%, #2dd4bf 65%, #0d9488 100%)',
+              backgroundSize: '200% 200%',
+              animation: 'gradient-shift 4s ease-in-out infinite',
+            }}
+          >
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 -skew-x-12 translate-x-[-100%] group-hover:translate-x-[100%] duration-1000"></div>
+            <Zap className="w-5 h-5 relative z-10" />
+            <span className="relative z-10">VIEW THE APPLICATION</span>
+            <ArrowRight className="w-5 h-5 relative z-10 group-hover:translate-x-1 transition-transform duration-300" />
+          </button>
+        </motion.div>
+      </section>
+      )}
     </div>
   );
 }
