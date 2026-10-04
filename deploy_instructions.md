@@ -6,20 +6,25 @@ This guide explains how to deploy the React frontend to **Vercel** and the FastA
 
 ## 📡 1. Deploy the Backend to Render
 
-Render will read the `render.yaml` specification in the root of the repository to spin up a persistent Python Web Service.
+Render will read the `render.yaml` specification in the root of the repository to spin up a persistent Python Web Service. The blueprint provisions **only the backend** — the frontend is deployed to Vercel (Step 2).
 
 ### Steps:
 1. Sign in to your [Render Dashboard](https://dashboard.render.com).
 2. Click **New +** in the top right, then select **Blueprint**.
 3. Connect your GitHub repository (`XPLORA-Travel-Agent`).
-4. Render will auto-detect the service described in `render.yaml` (named `xplora-backend`).
+4. Render will auto-detect the service described in `render.yaml` (named `xplora-backend`, Python 3.12, health check at `/`).
 5. Render will prompt you to input the values for the following synchronized environment variables:
-   - `GROQ_API_KEY`: Your Groq platform key.
-   - `OPENROUTER_API_KEY`: Your fallback OpenRouter key.
-   - `TOMORROW_IO_API_KEY`: Your weather API key.
-   - `SCRAPEGRAPH_API_KEY`: Your ScrapeGraphAI web scraper key.
-   - `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`: Credentials for your remote MySQL Database (see Database Setup below).
-6. Click **Apply**. Render will automatically provision the service, install requirements, and boot uvicorn.
+   - **Required:**
+     - `GROQ_API_KEY`: Your Groq platform key.
+     - `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`: Credentials for your remote MySQL Database (see Database Setup below).
+   - **Recommended / optional** (leave blank to disable the feature):
+     - `OPENROUTER_API_KEY`: Fallback LLM when Groq is at capacity.
+     - `TOMORROW_IO_API_KEY`: Your weather API key (falls back to free Open-Meteo).
+     - `SCRAPEGRAPH_API_KEY`: Scraper key reserved for future use.
+     - `GOOGLE_PLACES_API_KEY`: Place photos/ratings enrichment.
+     - `EXCHANGERATE_API_KEY`: Currency conversion.
+     - `PINECONE_API_KEY`: RAG knowledge base for travel blogs.
+6. Click **Apply**. Render will automatically provision the service, install requirements, boot uvicorn, and verify the `/` health endpoint.
 7. **Copy the Web Service URL** (e.g. `https://xplora-backend.onrender.com`). You will need this for the Vercel frontend.
 
 ### 🗄️ Database Setup:
@@ -42,14 +47,24 @@ Vercel will build and host your Vite/React static assets.
    - **Root Directory**: Select `.` (Default).
    - **Build Command**: `npm run build` (Default).
    - **Output Directory**: `dist` (Default).
-5. Open **Environment Variables** and add the following variable:
+5. Open **Environment Variables** and add the following variable (⚠️ **required — the app will not work without it**):
    - **Key**: `VITE_API_BASE_URL`
    - **Value**: `https://your-backend-url.onrender.com` (paste your Render backend URL copied in Step 1).
+   - Note: Vite bakes this value in **at build time**. If your backend URL changes, update the variable and **redeploy** Vercel.
 6. Click **Deploy**. Vercel will install dependencies, build the client, and serve the application!
 
 ---
 
-## 🔄 3. Continuous Integration
+## ✅ 3. Post-Deploy Verification Checklist
+
+1. **Backend health**: Open `https://your-backend-url.onrender.com/` — it should return JSON like `{"status": "ok", "service": "xplora-backend", ...}` with HTTP 200. Render keeps the service "Live" only if this check passes.
+2. **Frontend wiring**: Open the live Vercel URL, start a trip request, and check the browser Network tab — every `/api/*` request must go to `*.onrender.com`, **not** the Vercel domain. If a console error says `VITE_API_BASE_URL is not set`, add the env var in Vercel and redeploy.
+3. **CORS**: Requests succeed from the Vercel origin (the backend allows all origins via `CORSMiddleware`).
+4. **Database**: Itinerary generation and trip ratings persist — confirm the remote MySQL instance accepts connections from Render (allow-list Render's egress or use `0.0.0.0/0` for a demo).
+
+---
+
+## 🔄 4. Continuous Integration
 Whenever you push new changes to the `main` branch of your GitHub repository:
 - **Vercel** will automatically rebuild and redeploy the frontend client.
 - **Render** will automatically pull, install dependencies, and rebuild the FastAPI backend.

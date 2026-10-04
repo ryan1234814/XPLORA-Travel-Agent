@@ -13,7 +13,8 @@ load_dotenv()
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.agents import LangTravelAgents, TravelPlanState
-from db.database import save_itinerary
+from db.database import save_itinerary, save_trip_rating, get_trip_ratings, get_rating_stats, get_place_cache, set_place_cache
+from config.api_config import get_api_status
 
 app = FastAPI()
 
@@ -33,6 +34,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/")
+async def health_check():
+    """Lightweight health endpoint — Render's deploy health check hits `/`.
+    Must stay free of DB/agent calls so cold boots respond quickly."""
+    return {
+        "status": "ok",
+        "service": "xplora-backend",
+        "api_status": get_api_status(),
+    }
 
 class PlanRequest(BaseModel):
     origin: Optional[str] = ""
@@ -398,6 +409,99 @@ async def generate_itinerary(req: PlanRequest):
             pass
         # Return a graceful error that the frontend can handle
         raise HTTPException(status_code=500, detail="Travel planning encountered an issue. Please try again.")
+
+class TripRatingRequest(BaseModel):
+    destination: str
+    rating: int
+    feedback: Optional[str] = ""
+    origin: Optional[str] = ""
+    trip_title: Optional[str] = ""
+
+    @field_validator('rating')
+    @classmethod
+    def validate_rating(cls, v: int):
+        if v < 1 or v > 5:
+            raise ValueError('Rating must be 1-5')
+        return v
+
+
+@app.post("/api/trip-rating")
+async def post_trip_rating(req: TripRatingRequest):
+    ok = save_trip_rating(req.destination, req.rating, req.feedback or "", req.origin or "", req.trip_title or "")
+    if not ok:
+        raise HTTPException(status_code=500, detail="Could not save rating")
+    stats = get_rating_stats(req.destination)
+    return {"ok": True, "stats": stats}
+
+
+@app.get("/api/trip-rating")
+async def get_trip_rating(destination: str = "", limit: int = 20):
+    ratings = get_trip_ratings(destination or None, limit=min(limit, 50))
+    stats = get_rating_stats(destination or None)
+    return {"ratings": ratings, "stats": stats}
+
+
+@app.get("/api/place-enrichment")
+async def place_enrichment(q: str, use_cache: bool = True):
+    if not q or not q.strip():
+        raise HTTPException(status_code=400, detail="q required")
+    q = q.strip()[:300]
+    # Check cache first
+    if use_cache:
+        cached = get_place_cache(q)
+        if cached and cached.get("rating") is not None:
+            return {**cached, "query": q, "cached": True}
+    try:
+        from agents.tools.places_enrichment import enrich_place
+        data = enrich_place(q)
+        # Save to cache (best-effort)
+        try:
+            set_place_cache(q, data)
+        except Exception:
+            pass
+        return {**data, "cached": False}
+    except Exception as e:
+        print(f"place-enrichment error: {e}")
+        raise HTTPException(status_code=500, detail="Enrichment failed")
+
+
+@app.post("/api/places-batch")
+async def places_batch(body: Dict[str, Any]):
+    queries = body.get("queries", [])
+    if not isinstance(queries, list) or not queries:
+        raise HTTPException(status_code=400, detail="queries list required")
+    queries = [str(x).strip() for x in queries if str(x).strip()][:10]
+    try:
+        from agents.tools.places_enrichment import enrich_place
+        from concurrent.futures import ThreadPoolExecutor
+        results = {}
+        # Try cache first
+        uncached = []
+        for qq in queries:
+            c = get_place_cache(qq)
+            if c and c.get("rating"):
+                results[qq] = {**c, "query": qq, "cached": True}
+            else:
+                uncached.append(qq)
+        if uncached:
+            with ThreadPoolExecutor(max_workers=4) as ex:
+                futs = {ex.submit(enrich_place, qq): qq for qq in uncached}
+                for fut, qq in futs.items():
+                    try:
+                        data = fut.result(timeout=10)
+                        results[qq] = {**data, "cached": False}
+                        try:
+                            set_place_cache(qq, data)
+                        except Exception:
+                            pass
+                    except Exception as e:
+                        print(f"batch enrich {qq} failed: {e}")
+                        results[qq] = {"query": qq, "rating": None, "photos": [], "reviews": [], "error": str(e)}
+        return {"results": results}
+    except Exception as e:
+        print(f"places-batch error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

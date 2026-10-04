@@ -1,16 +1,20 @@
 services:
   # ─── Backend API (Python/FastAPI) ───
+  # NOTE: The React frontend is deployed separately to Vercel (see vercel.json
+  # and deploy_instructions.md). Do not re-add a static_site here.
   - type: web
     name: xplora-backend
-    env: python
+    runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn backend.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
     envVars:
+      # Pin the native Python runtime (Render reads PYTHON_VERSION)
+      - key: PYTHON_VERSION
+        value: "3.12"
+      # Required
       - key: GROQ_API_KEY
-        sync: true
-      - key: OPENROUTER_API_KEY
-        sync: true
-      - key: TOMORROW_IO_API_KEY
         sync: true
       - key: MYSQL_HOST
         sync: true
@@ -22,18 +26,18 @@ services:
         sync: true
       - key: MYSQL_PORT
         value: "3306"
-
-  # ─── Frontend (Static Site) ───
-  - type: static_site
-    name: xplora-frontend
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
-    envVars:
-      - key: VITE_API_BASE_URL
-        fromService:
-          name: xplora-backend
-          property: host
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
+      # Recommended / optional (leave blank if unused)
+      - key: OPENROUTER_API_KEY
+        sync: true
+      - key: TOMORROW_IO_API_KEY
+        sync: true
+      - key: SCRAPEGRAPH_API_KEY
+        sync: true
+      - key: GOOGLE_PLACES_API_KEY
+        sync: true
+      - key: EXCHANGERATE_API_KEY
+        sync: true
+      - key: PINECONE_API_KEY
+        sync: true
+      - key: PINECONE_INDEX_NAME
+        value: "travel-guides"

@@ -203,13 +203,15 @@ The following search tools are used by the agents:
 
 ## 🌐 Deployment
 
-### Render.com
+The canonical setup is **frontend on Vercel + backend on Render** — see `deploy_instructions.md` for the full walkthrough and post-deploy checklist.
 
-The project includes a `render.yaml` for one-click deployment. Set the required environment variables in the Render dashboard.
+### Render (Backend only)
 
-### Vercel (Frontend only)
+The project includes a `render.yaml` blueprint that provisions **only** the `xplora-backend` Python web service (Python 3.12 via `PYTHON_VERSION`, health check at `/`). Set the required environment variables in the Render dashboard when the blueprint prompts for them.
 
-The `vercel.json` configuration is included for deploying the built React frontend separately.
+### Vercel (Frontend)
+
+The `vercel.json` configuration builds and hosts the React frontend. You **must** set `VITE_API_BASE_URL` in the Vercel project environment variables to the Render backend URL (e.g. `https://xplora-backend.onrender.com`) — it is baked in at build time, so redeploy after changing it. Without it, production API calls fail and the browser console logs an explicit error.
 
 ---
 

@@ -139,10 +139,12 @@ async function webSearchFallback(destination: string, duration: number, interest
 
 import AskPlace from './pages/AskPlace';
 import SmartPackTracker from './components/SmartPackTracker';
+import { PlaceEnrichment } from './components/PlaceEnrichment';
+import TripRating from './components/TripRating';
 import { generateItineraryICS, generateItineraryPDF } from './utils/export';
 
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:8000');
+import { API_BASE_URL } from './utils/apiBase';
 
 // Types
 export interface ActivityData {
@@ -1102,6 +1104,9 @@ function App() {
                       interests={selectedInterests}
                     />
 
+                    {/* Trip Rating - Social Proof & RLHF Loop */}
+                    <TripRating destination={destination} origin={origin} tripTitle={itinerary.trip_title} />
+
                     {/* Concierge Quote - Premium Block */}
                     <div className="relative group/concierge">
                       <div className="absolute -inset-4 bg-gradient-to-r from-primary/15 via-teal/10 to-amber/10 blur-3xl opacity-30 group-hover/concierge:opacity-60 transition-opacity duration-700 rounded-3xl"></div>
@@ -1241,6 +1246,8 @@ function App() {
                                       Inspiration
                                     </button>
                                   </div>
+                                  {/* Photos + Ratings + Reviews - Social Proof */}
+                                  <PlaceEnrichment query={act.map_query || act.title || act.location} />
 
                                   {act.transport_to_next && (
                                     <div className="glass-card-premium p-8 mt-10 relative overflow-hidden group/trans">
