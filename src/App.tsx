@@ -501,9 +501,9 @@ function App() {
       <div className="glow-orb glow-orb--accent" style={{ top: '60%', right: '-5%' }}></div>
       <div className="glow-orb glow-orb--amber" style={{ bottom: '10%', left: '30%' }}></div>
 
-      <div className="flex h-screen overflow-hidden">
+      <div className="flex flex-col md:flex-row min-h-screen md:h-screen md:overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-80 bg-[#0c0e12] border-r border-white/5 flex flex-col shrink-0 z-20 relative">
+        <aside className="w-full md:w-80 bg-[#0c0e12] border-b md:border-b-0 md:border-r border-white/5 flex flex-col md:shrink-0 z-20 relative md:h-full">
           {/* Sidebar gradient accent line */}
           <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-primary via-teal via-amber to-rose opacity-60"></div>
           <div className="p-8 pb-4 flex items-center gap-4 relative">
@@ -519,7 +519,7 @@ function App() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+          <div className="md:flex-1 md:overflow-y-auto px-6 py-4 space-y-6">
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] ml-1">Origin (Optional)</label>
               <div className="relative group input-glow rounded-xl">
@@ -825,7 +825,7 @@ function App() {
             </div>
           </div>
 
-          <div className="p-6 pt-2 space-y-3 border-t border-white/5 mt-auto">
+          <div className="p-6 pt-2 space-y-3 border-t border-white/5 md:mt-auto">
             {/* View mode toggle */}
             <div className="flex gap-2">
               <button
@@ -887,7 +887,7 @@ function App() {
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto scroll-smooth relative">
+        <main className="flex-1 md:overflow-y-auto scroll-smooth relative">
           {viewMode === 'ask' ? (
             <AskPlace />
           ) : (
@@ -898,7 +898,7 @@ function App() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 1.05 }}
                 key="welcome"
-                className="h-full flex flex-col items-center justify-center p-8 text-center max-w-3xl mx-auto relative"
+                className="min-h-[70vh] md:h-full flex flex-col items-center justify-center p-8 text-center max-w-3xl mx-auto relative"
               >
                 <div className="ambient-glow"></div>
                 <div className="ambient-glow--bottom"></div>
@@ -928,7 +928,7 @@ function App() {
 
               </motion.div>
             ) : isLoading ? (
-              <div key="loading" className="h-full flex flex-col items-center justify-center gap-12 p-8 relative">
+              <div key="loading" className="min-h-[70vh] md:h-full flex flex-col items-center justify-center gap-12 p-8 relative">
                 <div className="ambient-glow"></div>
                 <div className="ambient-glow--accent"></div>
                 <div className="relative">

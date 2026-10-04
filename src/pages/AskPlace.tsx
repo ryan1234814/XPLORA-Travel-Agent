@@ -203,9 +203,9 @@ export default function AskPlace() {
   };
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div className="md:h-full flex flex-col md:overflow-hidden">
       {/* Header area with inputs */}
-      <div className="shrink-0 px-8 pt-8 pb-6 border-b border-white/5">
+      <div className="shrink-0 px-6 md:px-8 pt-6 md:pt-8 pb-6 border-b border-white/5">
         <div className="flex items-center gap-3 mb-6">
           <div className="bg-gradient-to-br from-primary/25 via-teal/15 to-secondary/20 p-2.5 rounded-xl border border-primary/10 shadow-[0_0_20px_rgba(56,189,248,0.15)]">
             <Search className="w-5 h-5 text-primary drop-shadow-[0_0_8px_rgba(56,189,248,0.4)]" />
@@ -293,7 +293,7 @@ export default function AskPlace() {
       </div>
 
       {/* Results area */}
-      <div className="flex-1 overflow-y-auto px-8 py-6">
+      <div className="flex-1 md:overflow-y-auto px-6 md:px-8 py-6">
         <AnimatePresence mode="wait">
           {/* Loading state */}
           {isLoading && !result && (
