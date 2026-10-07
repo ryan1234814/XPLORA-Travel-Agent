@@ -84,7 +84,15 @@ def _try_parse_json(text: str) -> Optional[Dict[str, Any]]:
             return json.loads(json_match.group(1))
     except Exception:
         pass
-        
+
+    # Try extracting a top-level JSON array (e.g. day-completion responses)
+    try:
+        arr_match = re.search(r'(\[.*\])', text, re.DOTALL)
+        if arr_match:
+            return json.loads(arr_match.group(1))
+    except Exception:
+        pass
+
     return None
 
 
@@ -622,7 +630,82 @@ def _build_fallback_itinerary(destination: str, duration: int, interests: List[s
     # Build activities from search results
     activities_per_day = {'Relaxed': 2, 'Moderate': 3, 'Active': 4, 'Intense': 5}.get(pace, 3)
 
+    # Real place names for this degraded path: Wikipedia yields actual named
+    # attractions, which search headlines and generic templates never do. One narrow
+    # category per query keeps search precise; the pools are fetched concurrently.
+    from agents.tools.places_enrichment import wikipedia_place_names
+    from concurrent.futures import ThreadPoolExecutor
+
+    _parent_region = re.compile(
+        r"^(tourism in |list of )|pradesh$|^state of |^district$",
+        re.IGNORECASE,
+    )
+
+    def _candidate_places(term: str) -> List[str]:
+        picked = []
+        for name in wikipedia_place_names(term, anchor=destination):
+            clean = name.strip()
+            if not clean or _parent_region.search(clean):
+                continue
+            if clean.lower() == destination.strip().lower():
+                continue
+            if clean.lower() not in {p.lower() for p in picked}:
+                picked.append(clean)
+        return picked
+
+    _categories = {
+        'sight': [f'{destination} tourist attractions', f'{destination} museum', f'{destination} park'],
+        'heritage': [f'{destination} temple', f'{destination} monument'],
+        'dining': [f'{destination} restaurant', f'{destination} market'],
+    }
+    _terms = [(kind, term) for kind, terms in _categories.items() for term in terms]
+    pools: Dict[str, List[str]] = {kind: [] for kind in _categories}
+    try:
+        with ThreadPoolExecutor(max_workers=min(6, len(_terms))) as executor:
+            fetched = list(executor.map(lambda kt: (kt[0], _candidate_places(kt[1])), _terms))
+        for kind, names in fetched:
+            for name in names:
+                if name.lower() not in {p.lower() for p in pools[kind]}:
+                    pools[kind].append(name)
+    except Exception as e:
+        print(f'[Fallback] Wikipedia place lookup failed: {e}')
+    sight_pool = pools['sight']
+    heritage_pool = pools['heritage']
+    dining_pool = pools['dining']
+    used_places = set()
+
+    # Areas used when Wikipedia has no article for a place (small towns often have
+    # none). Still distinct per slot, so no two days repeat the same stop or photo.
+    _generic_areas = [
+        f'{destination} old town', f'{destination} market lane', f'{destination} riverside walk',
+        f'{destination} heritage quarter', f'{destination} hillside viewpoint',
+        f'{destination} food street', f'{destination} botanical gardens',
+        f'{destination} craft bazaar', f'{destination} temple street',
+    ]
+
+    def take_place(pool: List[str], fallback: str) -> str:
+        """Next unused real place, so no venue repeats across days."""
+        for name in pool:
+            if name.lower() not in used_places:
+                used_places.add(name.lower())
+                return name
+        for area in _generic_areas:
+            if area.lower() not in used_places:
+                used_places.add(area.lower())
+                return area
+        return fallback
+
     days = []
+
+    def _ordered_pools(*pools_: List[List[str]]) -> List[str]:
+        """Real places of the preferred kind first, then any other verified venue."""
+        merged: List[str] = []
+        for pool_ in pools_:
+            for name in pool_:
+                if name.lower() not in {m.lower() for m in merged}:
+                    merged.append(name)
+        return merged
+
     for day_num in range(1, duration + 1):
         day_activities = []
         # Determine transport mode and cost based on budget tier
@@ -633,19 +716,21 @@ def _build_fallback_itinerary(destination: str, duration: int, interests: List[s
             'Legendary': {'mode': 'Private Chauffeur', 'cost_base': 40},
         }
         transport = transport_options.get(budget_range, transport_options['Premier'])
-        symbol, code, _ = _get_currency_for_destination(destination)
+        symbol, code, currency_name = _get_currency_for_destination(destination)
         multiplier = _USD_TO_LOCAL_APPROX.get(code, 1.0)
         transport_cost_local = round(transport['cost_base'] * multiplier)
-        transport_cost_str = f"Free" if transport['mode'] == 'Walking' else f"{symbol}{transport_cost_local:,} {name}"
+        transport_cost_str = f"Free" if transport['mode'] == 'Walking' else f"{symbol}{transport_cost_local:,} {currency_name}"
 
         # Morning activity from attractions
+        morning_place = take_place(_ordered_pools(sight_pool, heritage_pool, dining_pool), f'{destination} old town')
         day_activities.append({
             'time': '09:00 AM',
-            'title': f'Day {day_num} Morning - Explore {destination}',
-            'description': f'Discover the highlights of {destination}. Search results suggest visiting the top-rated attractions and cultural sites.',
+            'title': f'Day {day_num} Morning - {morning_place}',
+            'place_name': morning_place,
+            'description': f'Start the day at {morning_place} in {destination}. Search results suggest this is among the top-rated places to visit.',
             'location': destination,
             'tag': 'Culture',
-            'map_query': destination,
+            'map_query': f'{morning_place}, {destination}',
             'transport_to_next': {
                 'mode': transport['mode'],
                 'duration': '20 min',
@@ -654,13 +739,17 @@ def _build_fallback_itinerary(destination: str, duration: int, interests: List[s
             }
         })
         if activities_per_day >= 2:
+            # A named venue beats a category label: when no eatery is verifiable, eat
+            # near a confirmed attraction rather than showing 'local dining' as the place.
+            lunch_place = take_place(_ordered_pools(dining_pool, sight_pool, heritage_pool), f'{destination} local dining')
             day_activities.append({
                 'time': '12:30 PM',
-                'title': f'Day {day_num} Lunch - Local Dining',
-                'description': f'Enjoy local cuisine at recommended restaurants in {destination}. {"Dietary-friendly options: " + ", ".join(dietary) if dietary else "Explore authentic local dishes."}',
-                'location': f'{destination} dining area',
+                'title': f'Day {day_num} Lunch - {lunch_place}',
+                'place_name': lunch_place,
+                'description': f'Enjoy local cuisine around {lunch_place} in {destination}. {"Dietary-friendly options: " + ", ".join(dietary) if dietary else "Explore authentic local dishes."}',
+                'location': f'{destination} - {lunch_place}',
                 'tag': 'Gastronomy',
-                'map_query': f'restaurants in {destination}',
+                'map_query': f'{lunch_place}, {destination}',
                 'transport_to_next': {
                     'mode': 'Walking',
                     'duration': '15 min',
@@ -669,13 +758,15 @@ def _build_fallback_itinerary(destination: str, duration: int, interests: List[s
                 }
             })
         if activities_per_day >= 3:
+            afternoon_place = take_place(_ordered_pools(heritage_pool, sight_pool, dining_pool), f'{destination} viewpoint')
             day_activities.append({
                 'time': '03:00 PM',
-                'title': f'Day {day_num} Afternoon - Discovery',
-                'description': f'Continue exploring {destination} with afternoon activities tailored to your interests: {", ".join(interests) if interests else "general sightseeing"}.',
-                'location': f'{destination} attractions',
+                'title': f'Day {day_num} Afternoon - {afternoon_place}',
+                'place_name': afternoon_place,
+                'description': f'Continue exploring {destination} at {afternoon_place}, tailored to your interests: {", ".join(interests) if interests else "general sightseeing"}.',
+                'location': f'{afternoon_place}, {destination}',
                 'tag': interests[0] if interests else 'Adventure',
-                'map_query': f'things to do in {destination}'
+                'map_query': f'{afternoon_place}, {destination}'
             })
 
         day_themes = ['Arrival & Discovery', 'Cultural Immersion', 'Local Exploration', 'Hidden Gems',
@@ -727,17 +818,249 @@ def _build_fallback_weather(destination: str, travel_dates: str) -> Dict[str, An
 
 
 def _build_fallback_transport(destination: str, origin: str, duration: int, budget_range: str) -> Dict[str, Any]:
-    """Build fallback transport data using DuckDuckGo search."""
+    """Build fallback transport data using DuckDuckGo search.
+
+    Populates every field the Mobility Strategy UI renders (comparison_tips,
+    options, route_optimization.strategy) so no section shows placeholder text.
+    """
     query = f"{destination} public transport how to get around getting there from {origin or 'major cities'}"
     results = _search_fallback(query)
     return {
-        'flights': {'notes': f'Search for flights from {origin or "your origin"} to {destination}. ' + results[:200]},
-        'regional_trains_buses': {'notes': 'Check local rail and bus schedules.', 'cost_vs_time_analysis': 'Varies by route'},
-        'car_rentals': {'options': [], 'notes': 'Car rental available at destination.'},
-        'airport_transfers': {'options': [{'mode': 'Taxi', 'why': 'Most convenient', 'cost_estimate': 'Varies', 'typical_time_min': None}], 'notes': 'Standard airport transfer options available.'},
-        'local_transport': {'how_to_get_around': ['Public transport', 'Walking', 'Taxi/Rideshare'], 'apps': [], 'passes': [], 'notes': results[:200]},
-        'route_optimization': {'strategy': 'Visit nearby attractions together to minimize transit time.', 'suggested_area_groupings': [], 'sample_day_route_stops': [], 'google_maps_directions_url': ''}
+        'flights': {
+            'recommended_search_queries': [f'flights from {origin or "major hubs"} to {destination}'],
+            'comparison_tips': [
+                f'Compare {origin or "origin"} → {destination} fares on at least two aggregators before booking.',
+                'Mid-week departures are usually cheaper than weekends.',
+                'Check nearby alternate airports for the destination.',
+            ],
+            'notes': f'Search for flights from {origin or "your origin"} to {destination}. ' + results[:200],
+        },
+        'regional_trains_buses': {
+            'recommended_search_queries': [f'{destination} regional train bus network'],
+            'provider_hints': ['National/regional rail operator', 'Intercity bus services'],
+            'comparison_tips': [
+                f'Check rail vs bus for journeys under 4 hours to {destination} — rail is usually faster.',
+                'Advance booking windows lower regional train fares significantly.',
+                'Night trains/buses can save a night of accommodation.',
+            ],
+            'options': [
+                {'company': 'Regional rail network', 'why': 'Fastest connections into the city centre', 'estimated_daily_rate': 'Varies by route', 'pros_cons': 'Comfortable, but peak fares are higher'},
+                {'company': 'Intercity coach services', 'why': 'Budget-friendly alternative to rail', 'estimated_daily_rate': 'Low fixed fares', 'pros_cons': 'Cheaper but slower in traffic'},
+            ],
+            'notes': 'Check local rail and bus schedules.',
+            'cost_vs_time_analysis': 'Varies by route; rail generally wins on speed, coaches on price',
+        },
+        'car_rentals': {
+            'recommended_search_queries': [f'car rental {destination}', f'private chauffeur {destination}'],
+            'options': [
+                {'company': 'International rental brands (airport desks)', 'why': 'Reliable fleet and insurance options', 'estimated_daily_rate': 'Varies by season', 'pros_cons': 'Convenient pickup, but city parking can be costly'},
+                {'company': 'Local chauffeur / hire-with-driver services', 'why': f'Cost-effective for {budget_range} tier groups avoiding self-drive stress', 'estimated_daily_rate': 'Day-rate based', 'pros_cons': 'Door-to-door comfort, but book ahead'},
+            ],
+            'notes': 'Car rental available at destination.',
+        },
+        'airport_transfers': {
+            'recommended_search_queries': [f'{destination} airport to city centre transfer'],
+            'options': [
+                {'mode': 'Taxi', 'why': 'Most convenient, door-to-door after arrival', 'cost_estimate': 'Varies', 'typical_time_min': None},
+                {'mode': 'Airport express bus/train', 'why': 'Fixed fare and predictable schedule into the city centre', 'cost_estimate': 'Low', 'typical_time_min': 45},
+                {'mode': 'Pre-booked private transfer', 'why': 'Meet-and-greet; best value for groups or late arrivals', 'cost_estimate': 'Mid-range', 'typical_time_min': 40},
+            ],
+            'notes': 'Standard airport transfer options available.',
+        },
+        'local_transport': {
+            'recommended_search_queries': [f'{destination} metro bus pass travel card'],
+            'how_to_get_around': ['Public transport', 'Walking', 'Taxi/Rideshare'],
+            'comparison_tips': [
+                f'Buy a multi-day travel card in {destination} instead of single tickets.',
+                'Validate tickets before boarding to avoid fines.',
+                'Rideshare apps are usually pricier at peak hours.',
+            ],
+            'options': [
+                {'mode': 'Metro/light rail', 'why': 'Backbone of city movement, avoids road traffic'},
+                {'mode': 'City buses', 'why': 'Reach areas the rail network misses'},
+                {'mode': 'Rideshare/taxi', 'why': 'Best for late nights or heavy luggage'},
+            ],
+            'apps': [],
+            'passes': ['Multi-day travel card'],
+            'notes': results[:200],
+        },
+        'route_optimization': {
+            'strategy': f'Group {destination} attractions by neighbourhood and visit one cluster per day, starting with the farthest point from the accommodation and working back, to minimise transit fatigue.',
+            'suggested_area_groupings': [],
+            'sample_day_route_stops': [],
+            'google_maps_directions_url': '',
+        }
     }
+
+
+def _summarize_mobility_for_itinerary(mobility_output: Any) -> str:
+    """Compress the transport_mobility agent output into a prompt-safe summary
+    covering every Mobility Strategy section for itinerary generation."""
+    if not isinstance(mobility_output, dict) or not mobility_output:
+        return "No mobility data available. Recommend sensible, budget-consistent transport modes based on general local knowledge."
+
+    def _lines(key: str, label: str) -> List[str]:
+        section = mobility_output.get(key)
+        if not isinstance(section, dict):
+            return []
+        out = [f"{label}:"]
+        for field in ('comparison_tips', 'how_to_get_around', 'passes', 'apps', 'provider_hints'):
+            vals = section.get(field)
+            if isinstance(vals, list) and vals:
+                out.append(f"  {field.replace('_', ' ')}: " + '; '.join(str(v) for v in vals[:5]))
+        options = section.get('options')
+        if isinstance(options, list) and options:
+            opts = [f"{o.get('company') or o.get('mode') or 'Option'} ({o.get('estimated_daily_rate') or o.get('cost_estimate') or 'cost n/a'})" for o in options[:4] if isinstance(o, dict)]
+            if opts:
+                out.append("  options: " + '; '.join(opts))
+        notes = section.get('notes')
+        if isinstance(notes, str) and notes.strip():
+            out.append("  notes: " + notes.strip()[:200])
+        return out if len(out) > 1 else []
+
+    lines: List[str] = []
+    for key, label in (
+        ('flights', 'AERIAL ROUTES (flights)'),
+        ('regional_trains_buses', 'REGIONAL RAIL & BUSES'),
+        ('car_rentals', 'PRIVATE CHAUFFEUR & HIRE'),
+        ('airport_transfers', 'PROTOCOL TRANSFERS (airport)'),
+        ('local_transport', 'URBAN MOBILITY'),
+    ):
+        lines.extend(_lines(key, label))
+
+    route = mobility_output.get('route_optimization')
+    if isinstance(route, dict):
+        if route.get('strategy'):
+            lines.append(f"ROUTE OPTIMIZATION STRATEGY: {str(route['strategy'])[:300]}")
+        groupings = route.get('suggested_area_groupings')
+        if isinstance(groupings, list) and groupings:
+            lines.append("  area groupings: " + '; '.join(str(g) for g in groupings[:6]))
+
+    return '\n'.join(lines) if lines else "No detailed mobility data available; keep transport choices practical and budget-consistent."
+
+
+def _repair_truncated_json(text: str) -> Optional[Dict[str, Any]]:
+    """Salvage JSON cut off mid-stream (e.g. LLM hit its max-token limit while
+    generating a long multi-day itinerary): drop the dangling trailing token,
+    close any open strings/brackets and re-parse whatever complete content
+    survived."""
+    if not text or not isinstance(text, str):
+        return None
+    match = re.search(r'\{[\s\S]*\}', text)
+    candidate = match.group(0) if match else text[text.find('{'):] if '{' in text else ''
+    if not candidate:
+        return None
+    # Rewind to the last comma so partially-written trailing values are dropped
+    trimmed = candidate.rsplit(',', 1)[0] if ',' in candidate else candidate
+    # Close a dangling open string, escaping a lone trailing backslash first
+    if trimmed.count('"') % 2 == 1:
+        if trimmed.endswith('\\') and trimmed.endswith('\\\\') is False:
+            trimmed = trimmed[:-1]
+        trimmed += '"'
+    stack = []
+    in_str = False
+    esc = False
+    for ch in trimmed:
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == '\\':
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch in '[{':
+            stack.append(ch)
+        elif ch in ']}':
+            if stack and ((ch == ']' and stack[-1] == '[') or (ch == '}' and stack[-1] == '{')):
+                stack.pop()
+    repaired = trimmed + ''.join(']' if c == '[' else '}' for c in reversed(stack))
+    try:
+        parsed = json.loads(repaired)
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        return None
+
+
+def _build_fallback_itinerary_days(destination: str, day_numbers: List[int], interests: List[str], place_pool: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Build template days for the requested day numbers.
+
+    Used both by the last-resort path and to top up itineraries whose LLM output
+    was truncated. Never caps the duration — every requested day is produced,
+    cycling through real place names so every activity still resolves to a
+    genuine venue (and its own photographs).
+    """
+    from agents.tools.places_enrichment import wikipedia_place_names
+    from concurrent.futures import ThreadPoolExecutor
+    if not place_pool:
+        _pool_terms = [f"{destination} tourist attractions", f"{destination} museum",
+                       f"{destination} park", f"{destination} temple"]
+        with ThreadPoolExecutor(max_workers=4) as _ex:
+            _hits = list(_ex.map(lambda t: wikipedia_place_names(t, anchor=destination, limit=8), _pool_terms))
+        place_pool = []
+        for names in _hits:
+            for name in names:
+                if not name.strip() or name.strip().lower() == destination.strip().lower():
+                    continue
+                if name.lower() not in {p.lower() for p in place_pool}:
+                    place_pool.append(name)
+    if not place_pool:
+        place_pool = [f"{destination} old town", f"{destination} market lane",
+                      f"{destination} riverside walk", f"{destination} heritage quarter",
+                      f"{destination} hillside viewpoint", f"{destination} food street"]
+
+    _tags = ['Culture', 'Gastronomy', 'Adventure']
+    days: List[Dict[str, Any]] = []
+    for i, day_num in enumerate(day_numbers):
+        slot_places = [place_pool[(i * 3 + j) % len(place_pool)] for j in range(3)]
+        days.append({
+            "day_number": day_num,
+            "day_name": f"Day {day_num}",
+            "theme": "Exploration & Discovery",
+            "activities": [
+                {
+                    "time": "09:00 AM",
+                    "title": f"Morning at {slot_places[0]}",
+                    "place_name": slot_places[0],
+                    "description": f"Start your day at {slot_places[0]}, one of the recognised highlights of {destination}.",
+                    "location": f"{slot_places[0]}, {destination}",
+                    "tag": _tags[0],
+                    "map_query": f"{slot_places[0]}, {destination}",
+                    "transport_to_next": {
+                        "mode": "Walking",
+                        "duration": "15 min",
+                        "cost": "Free",
+                        "instructions": "Stroll through the local area"
+                    }
+                },
+                {
+                    "time": "12:30 PM",
+                    "title": f"Lunch near {slot_places[1]}",
+                    "place_name": slot_places[1],
+                    "description": f"Enjoy authentic local flavours around {slot_places[1]} in {destination}.",
+                    "location": f"{slot_places[1]}, {destination}",
+                    "tag": _tags[1],
+                    "map_query": f"{slot_places[1]}, {destination}",
+                    "transport_to_next": {
+                        "mode": "Local Transport",
+                        "duration": "20 min",
+                        "cost": "Budget-tier local fare",
+                        "instructions": "Take local transit to the afternoon stop"
+                    }
+                },
+                {
+                    "time": "03:00 PM",
+                    "title": f"Afternoon at {slot_places[2]}",
+                    "place_name": slot_places[2],
+                    "description": f"Wrap up the day exploring {slot_places[2]}, a popular stop in {destination}." + (f" Matches your interest in {interests[0]}." if interests else ""),
+                    "location": f"{slot_places[2]}, {destination}",
+                    "tag": _tags[2],
+                    "map_query": f"{slot_places[2]}, {destination}"
+                }
+            ]
+        })
+    return days
 
 
 def _build_fallback_local_expert(destination: str, interests: List[str]) -> Dict[str, Any]:
@@ -1445,7 +1768,10 @@ Otherwise, provide your budget analysis and recommendations.
 
         system_prompt = f"""You are the Transport & Mobility Agent.
 
-Purpose: End-to-end movement planning for a trip.
+Purpose: End-to-end movement planning for a trip. Your output feeds the UI's
+"Mobility Strategy" panel, which has FIVE collapsible sections plus a
+"Coordinated Logic" card. EVERY section must be populated with real, specific
+details so the panel never falls back to placeholder text.
 
 Trip context:
 - Origin (if provided): {origin}
@@ -1470,6 +1796,15 @@ Your tasks:
 6) Consider accessibility needs when recommending transport modes.
 7) For larger groups, suggest cost-effective shared transport options.
 
+SECTION CONTENT REQUIREMENTS (CRITICAL — the UI renders these exact fields):
+- "flights" (Aerial Routes & Logistics): "comparison_tips" MUST contain 3-5 concrete tips.
+- "regional_trains_buses" (Regional Rail Networks): "options" MUST contain 2-4 entries {{ "company": network/operator name, "why": string, "estimated_daily_rate": string, "pros_cons": string }} plus 3-5 "comparison_tips".
+- "car_rentals" (Private Chauffeur & Hire): "options" MUST contain 2-4 real providers or chauffeur services with "company", "why", "estimated_daily_rate" and "pros_cons".
+- "airport_transfers" (Protocol Transfers): "options" MUST contain 2-4 entries with non-empty "why" for each.
+- "local_transport" (Urban Mobility Protocol): "options" MUST contain 2-4 entries {{ "mode": string, "why": string }} and "comparison_tips" MUST contain 3-5 practical tips (passes, apps, etiquette).
+- "route_optimization" (Coordinated Logic): "strategy" MUST be a 1-3 sentence, destination-specific routing strategy (never empty, never generic).
+Every "notes" field must carry at least one destination-specific fact.
+
 Use the search results above to populate real, specific transport details. If search results are sparse, supplement with your knowledge.
 
 IMPORTANT: Return STRICT JSON with this schema (no markdown):
@@ -1482,6 +1817,8 @@ IMPORTANT: Return STRICT JSON with this schema (no markdown):
   "regional_trains_buses": {{
     "recommended_search_queries": [string],
     "provider_hints": [string],
+    "comparison_tips": [string],
+    "options": [{{ "company": string, "why": string, "estimated_daily_rate": string, "pros_cons": string }}],
     "cost_vs_time_analysis": string,
     "notes": string
   }},
@@ -1498,6 +1835,8 @@ IMPORTANT: Return STRICT JSON with this schema (no markdown):
   "local_transport": {{
     "recommended_search_queries": [string],
     "how_to_get_around": [string],
+    "comparison_tips": [string],
+    "options": [{{ "mode": string, "why": string }}],
     "apps": [string],
     "passes": [string],
     "real_time_info_links": [string],
@@ -1720,12 +2059,24 @@ Provide realistic, contemporary local insights. In 'colors', include evocative n
 
         budget_cost_guide = _get_budget_cost_guide(destination, budget_tier)
 
+        # Feed the Mobility Strategy sections (flights, rail, chauffeur, transfers,
+        # urban transport, coordinated routing) into itinerary generation so the
+        # day-by-day plan stays consistent with what the panel shows.
+        mobility_context = _summarize_mobility_for_itinerary(
+            agent_outputs.get("transport_mobility", {}).get("output")
+        )
+
         system_prompt = f"""Create a {duration}-day travel itinerary for {destination} in JSON format.
 
 REQUIREMENTS:
 - Return ONLY valid JSON (no markdown, no explanations)
 - Each day must have DIFFERENT real locations in {destination}
-- Include {duration} days with activities per day
+- PLACE NAMING (CRITICAL): every activity must name the ACTUAL, specific place the traveller visits — the real venue, attraction, landmark or restaurant name (e.g. "Robber's Cave", "Clock Tower Dehradun", "House of MG") — never a generic label like "Local Cuisine Experience", "Morning Exploration", "dehradun dining area" or "best restaurant".
+- "place_name" is the exact real-world name of that place. "title" is a short evocative heading. "location" is the neighbourhood/area plus {destination}.
+- "map_query" MUST be "<place_name>, {destination}" so maps and photographs resolve to that one place. NEVER use generic queries like "restaurants in {destination}", "attractions in {destination}" or "things to do in {destination}".
+- Do not repeat a place anywhere in the itinerary: all {duration} days together must use a distinct place_name per activity, and each day should explore a different set of places.
+- Only name places you are confident genuinely exist in {destination}; prefer well-known, verifiable venues over invented ones.
+- Include EXACTLY {duration} days with activities per day — never fewer. If you are running short on space, shorten descriptions rather than dropping a day.
 - Budget: {budget_tier} ({local_currency_name}), Interests: {interests}
 - Group: {group_size} {group_type} travelers
 - Pace: {pace} ({pace_guidance})
@@ -1749,6 +2100,11 @@ IMPORTANT GUIDELINES:
 - For risk_tolerance 'Conservative', stay in established tourist areas; 'Adventurous' can include hidden gems and local neighborhoods.
 - Transport costs in transport_to_next MUST match the budget tier above (e.g., Essential = cheap local buses, Legendary = private taxis/charters).
 
+MOBILITY STRATEGY (from the Transport & Mobility Agent — transport_to_next modes, costs and day ordering MUST stay consistent with this):
+{mobility_context}
+- Use the route_optimization strategy and suggested_area_groupings above to order each day's activities geographically.
+- Where the mobility plan names specific passes, apps or transport modes, reference them in transport_to_next "instructions".
+
 JSON FORMAT:
 {{
   "trip_title": "Title for {destination}",
@@ -1764,11 +2120,12 @@ JSON FORMAT:
       "activities": [
         {{
           "time": "09:00 AM",
-          "title": "Real attraction name",
+          "title": "Short evocative heading",
+          "place_name": "Exact real place name",
           "description": "What to do here",
-          "location": "Specific location",
+          "location": "Neighbourhood, {destination}",
           "tag": "Culture",
-          "map_query": "Location for maps",
+          "map_query": "<place_name>, {destination}",
           "transport_to_next": {{
             "mode": "Walking",
             "duration": "15 min",
@@ -1826,7 +2183,15 @@ Generate the JSON for {destination} now:"""
         
         # Force JSON parsing using the improved helper
         parsed = _try_parse_json(response_text)
-        
+
+        if not parsed or not isinstance(parsed, dict) or not parsed.get("days"):
+            # The response may have been cut off at the token limit mid-itinerary;
+            # close the dangling JSON and salvage whatever complete days survived.
+            repaired = _repair_truncated_json(response_text)
+            if repaired:
+                print(f"[REPAIR] Recovered truncated JSON with {len(repaired.get('days', []))} partial day(s)")
+                parsed = repaired
+
         if not parsed:
             print(f"[WARNING] JSON parsing failed. Response was: {response_text[:200]}")
         else:
@@ -1852,6 +2217,60 @@ Generate the JSON for {destination} now:"""
                 else:
                     parsed["days"] = valid_days
 
+        # Top up missing days: the LLM sometimes stops early (token limit) and
+        # only the first few days survive. Complete via a focused JSON-only call,
+        # then ALWAYS guarantee the full {duration} days via a template backfill.
+        if parsed and isinstance(parsed, dict):
+            days_list = [d for d in parsed.get("days", []) if isinstance(d, dict) and d.get("activities")]
+            # Normalise: ensure every surviving day has a unique integer day_number
+            seen_numbers = set()
+            for idx, day in enumerate(days_list, start=1):
+                num = day.get("day_number")
+                if not isinstance(num, int) or num in seen_numbers:
+                    num = idx
+                seen_numbers.add(num)
+                day["day_number"] = num
+                day.setdefault("day_name", f"Day {num}")
+
+            if len(days_list) < duration:
+                missing = [d for d in range(1, duration + 1) if d not in seen_numbers]
+                print(f"[LENGTH] Itinerary truncated to {len(days_list)}/{duration} days; completing missing days {missing}...")
+                used_places = {str(a.get("place_name", "")).strip().lower()
+                               for day in days_list for a in day.get("activities", [])
+                               if isinstance(a, dict) and a.get("place_name")}
+                try:
+                    fill_prompt = f"""Return ONLY a JSON array (no markdown, no commentary) of {len(missing)} itinerary day objects for days {missing} of a {duration}-day trip to {destination}.
+Budget: {budget_tier}. Interests: {interests}. Group: {group_size} {group_type}. Pace: {pace}. Prices in {local_currency_name} ({local_currency_symbol}).
+Each day object: {{"day_number": int, "day_name": string, "theme": string, "activities": [{{"time", "title", "place_name", "description", "location", "tag", "map_query", "transport_to_next": {{"mode", "duration", "cost", "instructions"}}}}]}}
+Use real, specific venue names in {destination} that do NOT repeat these already-placed ones: {', '.join(sorted(used_places))[:800] or 'none'}."""
+                    fill_response = self._invoke_llm([SystemMessage(content=fill_prompt)])
+                    fill_parsed = _try_parse_json(_safe_message_content(fill_response))
+                    if isinstance(fill_parsed, list):
+                        for day in fill_parsed:
+                            if not isinstance(day, dict) or not day.get("activities"):
+                                continue
+                            num = day.get("day_number")
+                            if not isinstance(num, int) or num in seen_numbers or num not in missing:
+                                # adopt the next still-missing day number
+                                num = next((m for m in missing if m not in seen_numbers), None)
+                                if num is None:
+                                    continue
+                                day["day_number"] = num
+                            seen_numbers.add(num)
+                            day.setdefault("day_name", f"Day {num}")
+                            days_list.append(day)
+                except Exception as fill_err:
+                    print(f"[WARNING] Missing-day LLM completion failed: {fill_err}")
+
+                # Guaranteed backfill: any day the LLM still didn't produce
+                still_missing = [d for d in range(1, duration + 1) if d not in seen_numbers]
+                if still_missing:
+                    days_list.extend(_build_fallback_itinerary_days(destination, still_missing, state.get('interests', [])))
+                    print(f"[LENGTH] Template-backfilled remaining days {still_missing}")
+
+            parsed["days"] = sorted(days_list, key=lambda d: d["day_number"])
+            print(f"[LENGTH] Final itinerary: {len(parsed['days'])}/{duration} days")
+
         # If parsing fails or output is invalid, provide a structured fallback
         if not parsed or not isinstance(parsed, dict):
             destination = state.get('destination', 'your destination')
@@ -1867,52 +2286,12 @@ Generate the JSON for {destination} now:"""
                 "days": []
             }
             
-            # Add sample days with activities
-            for day_num in range(1, min(duration + 1, 4)):  # Cap at 3 days for fallback
-                sample_day = {
-                    "day_number": day_num,
-                    "day_name": f"Day {day_num}",
-                    "theme": "Exploration & Discovery",
-                    "activities": [
-                        {
-                            "time": "09:00 AM",
-                            "title": f"Morning Exploration in {destination}",
-                            "description": f"Start your day discovering the highlights and local culture of {destination}.",
-                            "location": f"Central {destination}",
-                            "tag": "Culture",
-                            "map_query": destination,
-                            "transport_to_next": {
-                                "mode": "Walking",
-                                "duration": "15 min",
-                                "cost": "Free",
-                                "instructions": "Stroll through the local area"
-                            }
-                        },
-                        {
-                            "time": "12:30 PM",
-                            "title": "Local Cuisine Experience",
-                            "description": f"Enjoy authentic local flavors at a recommended restaurant in {destination}.",
-                            "location": f"{destination} dining district",
-                            "tag": "Gastronomy",
-                            "map_query": f"restaurants in {destination}",
-                            "transport_to_next": {
-                                "mode": "Local Transport",
-                                "duration": "20 min",
-                                "cost": "$3.00",
-                                "instructions": "Take local transit to afternoon destination"
-                            }
-                        },
-                        {
-                            "time": "03:00 PM",
-                            "title": "Afternoon Activities",
-                            "description": f"Explore popular attractions and landmarks in {destination}.",
-                            "location": f"{destination} attractions",
-                            "tag": "Adventure",
-                            "map_query": f"attractions in {destination}"
-                        }
-                    ]
-                }
-                parsed["days"].append(sample_day)
+            # Real, named places so even this last-resort path shows venues the traveller
+            # can actually find — and that resolve to their own photographs.
+            # Full requested duration: no 3-day cap.
+            parsed["days"] = _build_fallback_itinerary_days(
+                destination, list(range(1, duration + 1)), state.get('interests', [])
+            )
 
         # Enrich itinerary with Scrapling FAST travel + flight booking data (parallel, ~1s)
         try:

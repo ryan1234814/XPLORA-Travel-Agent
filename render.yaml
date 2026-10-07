@@ -2,10 +2,6 @@ services:
   # ─── Backend API (Python/FastAPI) ───
   # NOTE: The React frontend is deployed separately to Vercel (see vercel.json
   # and deploy_instructions.md). Do not re-add a static_site here.
-  # IMPORTANT: 'name' must equal the Render service's NAME, not its URL. The live
-  # service is reachable at https://xplora-backend-b3gn.onrender.com (Render added
-  # the -b3gn suffix because the URL slug was taken). Verify the exact service name
-  # in the Render dashboard before changing this, or Render will provision a duplicate.
   - type: web
     name: xplora-backend
     runtime: python

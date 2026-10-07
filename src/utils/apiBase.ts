@@ -1,8 +1,8 @@
 // Central resolution of the backend API base URL.
 //
 // In production this value is baked in at BUILD time from VITE_API_BASE_URL —
-// it is set to the Render backend URL (https://xplora-backend-b3gn.onrender.com)
-// in the Vercel project settings; redeploy whenever the backend URL changes.
+// set it to the Render backend URL (e.g. https://xplora-backend.onrender.com)
+// in the Vercel project settings, and redeploy whenever the backend URL changes.
 const envUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
 
 if (import.meta.env.PROD && !envUrl) {
@@ -10,7 +10,7 @@ if (import.meta.env.PROD && !envUrl) {
   // origin (Vercel) and return index.html instead of JSON.
   console.error(
     '[XPLORA] VITE_API_BASE_URL is not set in this production build. ' +
-    'API calls will fail. Set it to the backend URL (https://xplora-backend-b3gn.onrender.com) ' +
+    'API calls will fail. Set it to the backend URL (e.g. https://xplora-backend.onrender.com) ' +
     'in Vercel environment variables and redeploy.'
   );
 }

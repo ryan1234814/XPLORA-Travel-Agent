@@ -5,23 +5,30 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
+    // Design system: one accent (sky) + neutrals (white opacities, slate, zinc).
+    // red is kept only for error/danger states. Everything else is unavailable on purpose.
+    colors: {
+      transparent: "transparent",
+      current: "currentColor",
+      white: "#ffffff",
+      black: "#000000",
+      slate: require("tailwindcss/colors").slate,
+      zinc: require("tailwindcss/colors").zinc,
+      sky: require("tailwindcss/colors").sky,
+      red: require("tailwindcss/colors").red,
+    },
     extend: {
       colors: {
-        primary: "#38bdf8",
-        secondary: "#818cf8",
-        accent: "#67e8f9",
-        dark: "#07090d",
-        card: "rgba(22, 26, 33, 0.7)",
-        teal: "#2dd4bf",
-        amber: "#fbbf24",
-        rose: "#fb7185",
-        emerald: "#34d399",
-        fuchsia: "#e879f9",
-        indigo: "#818cf8",
-      },
-      fontFamily: {
-        outfit: ["Outfit", "sans-serif"],
-        inter: ["Inter", "sans-serif"],
+        accent: {
+          DEFAULT: "#38bdf8",
+          dark: "#0284c7",
+          light: "#7dd3fc",
+        },
+        surface: {
+          deep: "#05070a",
+          base: "#0c0e12",
+          card: "#14171c",
+        },
       },
     },
   },

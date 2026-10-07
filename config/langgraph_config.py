@@ -42,7 +42,9 @@ class LangGraphConfig:
         
         # LLM Parameters
         TEMPERATURE=0.7
-        MAX_TOKENS=4096
+        # 4096 truncated multi-day itinerary JSON (only ~3 days survived, which
+        # then hit the 3-day template fallback). gpt-oss-120b supports far more.
+        MAX_TOKENS=16384
         TOP_P=0.8
         
         @classmethod

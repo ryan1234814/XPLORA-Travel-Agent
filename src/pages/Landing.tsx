@@ -1,145 +1,260 @@
-import { useMemo } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import {
-  Diamond,
-  MapPin,
-  Search,
+  motion,
+  AnimatePresence,
+  useMotionValue,
+  useSpring,
+  useInView,
+} from 'framer-motion';
+import {
   Compass,
+  Search,
+  Brain,
   Globe,
+  Wallet,
+  Navigation,
+  MapPin,
+  Clock,
   Sparkles,
   ArrowRight,
   Zap,
-  Shield,
-  Clock,
-  Brain,
-  ChevronRight,
 } from 'lucide-react';
+import BrandMark from '../components/BrandMark';
 
-const features = [
+const DESTINATIONS = [
+  'Kyoto', 'Patagonia', 'Marrakech', 'Reykjavík', 'Lisbon', 'Queenstown',
+  'Santorini', 'Banff', 'Tokyo', 'Amalfi', 'Petra', 'Hanoi',
+];
+
+// Rotating landing-page background images (auto crossfade)
+const BG_IMAGES = [
+  'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSZTKpBYXQfpOcWytKrwm-To58YSJ-4CDhv9B3VuX2AeQ&s=10',
+  'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRtIYC56T-9s2kKeGZeM3vDx6YoT6lu4vym9MSQBLA_Cg&s=10',
+  'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTMwNrhpb7LIAQXu4mxtsfRZwLThbd4IsyKjbLgYm46wQ&s=10',
+  'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQpmnlpJ-vY_19_JvvfRDPGJKbqpIyeYAyxViKMSeogMA&s=10',
+  'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRv2yc6OdahQmvMHXaOkU8EPeLyqjVpCWQrJXmo8f8NIA&s=10',
+];
+
+const AGENTS = [
   {
-    icon: <Compass className="w-6 h-6" />,
-    title: 'AI Itinerary Architect',
-    description:
-      'Multi-agent system designs bespoke day-by-day itineraries tailored to your pace, interests, and budget — from Essential to Legendary.',
-    gradient: 'from-primary/20 to-primary/5',
-    border: 'border-primary/20',
-    iconColor: 'text-primary',
+    id: 'architect',
+    name: 'Itinerary Architect',
+    role: 'Sequences your days',
+    blurb:
+      'Balances pace, distance and opening hours into a day-by-day plan that actually flows on the ground.',
+    tags: ['Day-by-day', 'Pace tuning', 'Route order'],
+    Icon: Compass,
   },
   {
-    icon: <Search className="w-6 h-6" />,
-    title: 'Ask XPLORA',
-    description:
-      'Ask anything about any place on Earth. XPLORA researches the web in real-time, geocodes the location, and delivers cited answers.',
-    gradient: 'from-teal/20 to-teal/5',
-    border: 'border-teal/20',
-    iconColor: 'text-teal',
+    id: 'local',
+    name: 'Local Expert',
+    role: 'Cultural DNA',
+    blurb:
+      'Unwritten customs, sensory profiles and folklore — the texture of a place that guidebooks never capture.',
+    tags: ['Customs', 'Food lore', 'Hidden spots'],
+    Icon: Brain,
   },
   {
-    icon: <Brain className="w-6 h-6" />,
-    title: 'Local Expert Intelligence',
-    description:
-      'Unwritten customs, sensory profiles, folklore heritage — deep cultural DNA that guidebooks can never capture.',
-    gradient: 'from-amber/20 to-amber/5',
-    border: 'border-amber/20',
-    iconColor: 'text-amber',
+    id: 'weather',
+    name: 'Weather Analyst',
+    role: 'Plans around the sky',
+    blurb:
+      'Reads live forecasts and seasons so beaches land on sunny days and museums on the rainy ones.',
+    tags: ['Live forecast', 'Seasonal fit'],
+    Icon: Globe,
   },
   {
-    icon: <Globe className="w-6 h-6" />,
-    title: 'Live Transport & Weather',
-    description:
-      'Real-time transit data, route optimization, and weather analysis so you move smarter and pack right.',
-    gradient: 'from-rose/20 to-rose/5',
-    border: 'border-rose/20',
-    iconColor: 'text-rose',
+    id: 'budget',
+    name: 'Budget Optimizer',
+    role: 'Real numbers',
+    blurb:
+      'Costs in local currency — meals, transit, entries — mapped precisely to the tier you choose.',
+    tags: ['Local currency', 'Tier aware'],
+    Icon: Wallet,
   },
   {
-    icon: <Shield className="w-6 h-6" />,
-    title: 'Budget Intelligence',
-    description:
-      'Precision cost breakdowns in local currency — meals, transport, entries — mapped to your chosen budget tier.',
-    gradient: 'from-indigo/20 to-indigo/5',
-    border: 'border-indigo/20',
-    iconColor: 'text-indigo',
+    id: 'transport',
+    name: 'Transport Planner',
+    role: 'Moves you smartly',
+    blurb:
+      'Live transit, walking times and route optimization between every single stop on the map.',
+    tags: ['Live transit', 'Walk times'],
+    Icon: Navigation,
   },
   {
-    icon: <Sparkles className="w-6 h-6" />,
-    title: '180+ Destinations',
-    description:
-      'From Kyoto temples to Patagonian glaciers — XPLORA has deep knowledge across six continents and counting.',
-    gradient: 'from-fuchsia/20 to-fuchsia/5',
-    border: 'border-fuchsia/20',
-    iconColor: 'text-fuchsia',
+    id: 'research',
+    name: 'Ask XPLORA',
+    role: 'Answers anything',
+    blurb:
+      'Researches the live web, geocodes the location and returns a cited answer about any place on Earth.',
+    tags: ['Real-time web', 'Cited answers'],
+    Icon: Search,
   },
 ];
 
-const STAR_COLORS = ['#38bdf8', '#2dd4bf', '#fbbf24', '#fb7185', '#e879f9', '#ffffff'];
+const STEPS = [
+  {
+    title: 'Tell us where',
+    body: 'Destination, dates, pace, interests, budget tier and dietary needs — every detail you give reshapes the plan.',
+    Icon: MapPin,
+  },
+  {
+    title: 'Agents architect',
+    body: 'Six specialized agents collaborate in real time, cross-checking weather, transit, cost and culture against each other.',
+    Icon: Clock,
+  },
+  {
+    title: 'Explore the journey',
+    body: 'A rich, interactive itinerary with costs, local insights, transport routes and weather intelligence — in one clean interface.',
+    Icon: Sparkles,
+  },
+];
 
-// Seeded pseudo-random for stable star positions
-function seededRandom(seed: number): number {
-  const x = Math.sin(seed * 9301 + 49297) * 49297;
-  return x - Math.floor(x);
+const STATS = [
+  { to: 180, suffix: '+', label: 'Destinations' },
+  { to: 6, suffix: '', label: 'AI Agents' },
+  { to: 6, suffix: '', label: 'Continents' },
+  { to: 24, suffix: '/7', label: 'Planning' },
+];
+
+/* Mouse-driven 3D tilt — a playful, tactile hero mark */
+function TiltCard({ children }: { children: ReactNode }) {
+  const rx = useMotionValue(0);
+  const ry = useMotionValue(0);
+  const srx = useSpring(rx, { stiffness: 150, damping: 15 });
+  const sry = useSpring(ry, { stiffness: 150, damping: 15 });
+  return (
+    <motion.div
+      style={{ rotateX: srx, rotateY: sry, transformStyle: 'preserve-3d' }}
+      className="[perspective:900px]"
+      onMouseMove={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        const px = (e.clientX - r.left) / r.width - 0.5;
+        const py = (e.clientY - r.top) / r.height - 0.5;
+        ry.set(px * 20);
+        rx.set(-py * 20);
+      }}
+      onMouseLeave={() => {
+        rx.set(0);
+        ry.set(0);
+      }}
+    >
+      {children}
+    </motion.div>
+  );
 }
 
-const starData = Array.from({ length: 60 }, (_, i) => ({
-  left: `${seededRandom(i * 7 + 1) * 100}%`,
-  top: `${seededRandom(i * 13 + 3) * 100}%`,
-  width: `${seededRandom(i * 3 + 5) * 2.5 + 1}px`,
-  height: `${seededRandom(i * 11 + 7) * 2.5 + 1}px`,
-  animationDelay: `${seededRandom(i * 17 + 9) * 15}s`,
-  animationDuration: `${seededRandom(i * 19 + 11) * 10 + 10}s`,
-  background: STAR_COLORS[Math.floor(seededRandom(i * 23 + 13) * 6)],
-  opacity: seededRandom(i * 29 + 15) * 0.5 + 0.1,
-}));
+/* Count-up that fires once when scrolled into view */
+function CountUp({ to, suffix = '' }: { to: number; suffix?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const inView = useInView(ref, { once: true, margin: '-60px' });
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    if (!inView) return;
+    let raf = 0;
+    const start = performance.now();
+    const dur = 1500;
+    const tick = (t: number) => {
+      const p = Math.min((t - start) / dur, 1);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setVal(Math.round(eased * to));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [inView, to]);
+  return (
+    <span ref={ref}>
+      {val}
+      {suffix}
+    </span>
+  );
+}
 
 export default function Landing() {
   const navigate = useNavigate();
-  const stars = useMemo(() => starData, []);
+  const [dIdx, setDIdx] = useState(0);
+  const [active, setActive] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const [step, setStep] = useState(0);
+  const [bgIdx, setBgIdx] = useState(0);
+
+  // Rotating destination in the headline
+  useEffect(() => {
+    const t = setInterval(
+      () => setDIdx((i) => (i + 1) % DESTINATIONS.length),
+      2600,
+    );
+    return () => clearInterval(t);
+  }, []);
+
+  // Auto-cycle the agent spotlight until the visitor hovers it
+  useEffect(() => {
+    if (paused) return;
+    const t = setInterval(
+      () => setActive((i) => (i + 1) % AGENTS.length),
+      4500,
+    );
+    return () => clearInterval(t);
+  }, [paused]);
+
+  // Timed background image rotation
+  useEffect(() => {
+    const t = setInterval(
+      () => setBgIdx((i) => (i + 1) % BG_IMAGES.length),
+      6000,
+    );
+    return () => clearInterval(t);
+  }, []);
+
+  const A = AGENTS[active];
 
   return (
-    <div className="main-gradient min-h-screen font-outfit text-slate-200 overflow-hidden">
-      {/* Floating particles */}
-      <div className="stars-container" aria-hidden="true">
-        {stars.map((s, i) => (
-          <div key={i} className="star" style={s} />
+    <div className="main-gradient text-on-image min-h-screen text-slate-200 overflow-hidden">
+      {/* ===== ROTATING BACKGROUND ===== */}
+      <div className="fixed inset-0 z-0" aria-hidden="true">
+        {BG_IMAGES.map((src, i) => (
+          <div
+            key={src}
+            className="absolute inset-0 transition-all duration-[2000ms] ease-in-out"
+            style={{
+              backgroundImage: `url("${src}")`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              opacity: i === bgIdx ? 1 : 0,
+              transform: i === bgIdx ? 'scale(1.08)' : 'scale(1)',
+            }}
+          />
         ))}
       </div>
 
-      {/* Ambient glow orbs */}
-      <div className="glow-orb glow-orb--primary" style={{ top: '5%', left: '-8%' }} />
-      <div className="glow-orb glow-orb--accent" style={{ top: '50%', right: '-5%' }} />
-      <div className="glow-orb glow-orb--amber" style={{ bottom: '5%', left: '30%' }} />
-      <div className="glow-orb glow-orb--rose" style={{ top: '70%', left: '-10%' }} />
-
-      {/* Ambient glow overlays */}
-      <div className="ambient-glow" />
-      <div className="ambient-glow--bottom" />
-
-      {/* ===== HERO SECTION ===== */}
+      {/* ===== HERO ===== */}
       <section className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 text-center">
-        <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
+        <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-sky-400/30 to-transparent" />
 
-        {/* Logo mark */}
+        {/* Logo mark with interactive tilt */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
           className="mb-10"
         >
-          <div className="relative">
-            <div className="absolute inset-0 bg-primary blur-[100px] opacity-20 animate-pulse-soft" />
-            <motion.div
-              animate={{ y: [0, -10, 0] }}
-              transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-              className="bg-gradient-to-br from-primary/15 via-primary/5 to-secondary/10 p-10 rounded-[2.5rem] border border-primary/20 shadow-2xl relative z-10 backdrop-blur-xl"
-            >
-              <div className="absolute inset-0 rounded-[2.5rem] bg-gradient-to-br from-primary/10 to-transparent opacity-50" />
-              <Diamond className="w-20 h-20 text-primary relative z-10 drop-shadow-[0_0_20px_rgba(56,189,248,0.4)]" />
-            </motion.div>
-          </div>
+          <TiltCard>
+            <div className="relative">
+              <div className="absolute inset-0 bg-sky-400 blur-[100px] opacity-20 animate-pulse-soft" />
+              <motion.div
+                animate={{ y: [0, -10, 0] }}
+                transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+                className="bg-gradient-to-br from-sky-400/15 via-sky-400/5 to-sky-400/10 p-10 rounded-[2.5rem] border border-sky-400/20 shadow-2xl relative z-10 backdrop-blur-xl"
+              >
+                <BrandMark className="w-20 h-20 text-sky-300 relative z-10 drop-shadow-[0_0_20px_rgba(56,189,248,0.4)]" />
+              </motion.div>
+            </div>
+          </TiltCard>
         </motion.div>
 
-        {/* Title */}
+        {/* Wordmark */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -147,7 +262,7 @@ export default function Landing() {
           className="mb-4"
         >
           <h1 className="text-7xl md:text-8xl lg:text-9xl font-bold tracking-tight text-white leading-none">
-            <span className="text-gradient-shimmer">XPLORA</span>
+            <span className="wordmark">XPLORA</span>
           </h1>
         </motion.div>
 
@@ -155,36 +270,46 @@ export default function Landing() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.25, ease: [0.16, 1, 0.3, 1] }}
-          className="text-sm md:text-base text-slate-500 uppercase tracking-[0.35em] font-medium mb-8"
+          className="text-sm md:text-base text-slate-200 uppercase tracking-[0.35em] font-medium mb-8"
         >
           Intelligent Travel Architect
         </motion.p>
 
-        {/* Headline */}
+        {/* Headline with rotating destination */}
         <motion.h2
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.35, ease: [0.16, 1, 0.3, 1] }}
-          className="text-3xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight max-w-4xl"
+          className="text-4xl md:text-6xl lg:text-7xl font-bold text-white mb-6 leading-tight max-w-4xl"
         >
-          Craft Your{' '}
-          <span className="text-gradient-rainbow italic">Bespoke</span> Travel
-          <br />
-          Narrative
+          Plan a trip to{' '}
+          <span className="relative inline-block">
+            <AnimatePresence mode="wait">
+              <motion.span
+                key={DESTINATIONS[dIdx]}
+                initial={{ y: '0.35em', opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: '-0.35em', opacity: 0 }}
+                transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+                className="accent-label italic inline-block"
+              >
+                {DESTINATIONS[dIdx]}
+              </motion.span>
+            </AnimatePresence>
+          </span>
         </motion.h2>
 
         <motion.p
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.45, ease: [0.16, 1, 0.3, 1] }}
-          className="text-base md:text-lg text-slate-400 max-w-2xl mb-12 leading-relaxed font-light"
+          className="text-base md:text-lg text-slate-100 max-w-2xl mb-12 leading-relaxed font-light"
         >
-          XPLORA transcends standard planning. A constellation of AI agents
-          researches, designs, and curates intelligent travel experiences that
-          resonate with your soul.
+          Six AI agents research, design and cost your trip in real time — then
+          hand you a day-by-day plan you can actually follow.
         </motion.p>
 
-        {/* CTA Buttons */}
+        {/* The only "VIEW THE APPLICATION" call-to-action */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -193,29 +318,13 @@ export default function Landing() {
         >
           <button
             onClick={() => navigate('/app')}
-            className="group relative text-white font-bold py-4 px-10 rounded-2xl shadow-[0_5px_30px_rgba(56,189,248,0.35)] hover:shadow-[0_8px_50px_rgba(56,189,248,0.55)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 flex items-center gap-3 tracking-[0.12em] text-sm overflow-hidden"
-            style={{
-              background:
-                'linear-gradient(135deg, #38bdf8 0%, #0284c7 25%, #2dd4bf 65%, #0d9488 100%)',
-              backgroundSize: '200% 200%',
-              animation: 'gradient-shift 4s ease-in-out infinite',
-            }}
+            className="btn-accent group relative font-bold py-4 px-10 rounded-2xl flex items-center gap-3 tracking-[0.12em] text-sm overflow-hidden"
           >
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 -skew-x-12 translate-x-[-100%] group-hover:translate-x-[100%] duration-1000" />
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 -skew-x-12 translate-x-[-100%] group-hover:translate-x-[100%] duration-1000" />
             <Zap className="w-5 h-5 relative z-10" />
             <span className="relative z-10">VIEW THE APPLICATION</span>
             <ArrowRight className="w-5 h-5 relative z-10 group-hover:translate-x-1 transition-transform duration-300" />
           </button>
-
-          <a
-            href="https://github.com/ryan1234814/XPLORA-Travel-Agent"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-slate-400 font-medium py-4 px-8 rounded-2xl border border-white/10 hover:border-white/20 hover:text-white hover:bg-white/[0.04] transition-all duration-300 text-sm flex items-center gap-2"
-          >
-            View on GitHub
-            <ChevronRight className="w-4 h-4" />
-          </a>
         </motion.div>
 
         {/* Scroll indicator */}
@@ -228,74 +337,49 @@ export default function Landing() {
           <motion.div
             animate={{ y: [0, 8, 0] }}
             transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-            className="w-6 h-10 rounded-full border-2 border-white/15 flex items-start justify-center p-1.5"
+            className="w-6 h-10 rounded-full border-2 border-white/40 flex items-start justify-center p-1.5"
           >
             <motion.div
               animate={{ opacity: [0.3, 1, 0.3], height: ['4px', '8px', '4px'] }}
               transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-              className="w-1 bg-primary rounded-full"
+              className="w-1 bg-sky-400 rounded-full"
             />
           </motion.div>
         </motion.div>
       </section>
 
-      {/* ===== FEATURES SECTION ===== */}
-      <section className="relative z-10 px-6 py-24 md:py-32">
-        <div className="max-w-6xl mx-auto">
-          {/* Section header */}
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-100px' }}
-            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-            className="text-center mb-20"
-          >
-            <p className="text-[10px] font-bold text-primary uppercase tracking-[0.3em] mb-4">
-              Powered by AI
-            </p>
-            <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
-              Six Agents.{' '}
-              <span className="text-gradient-rainbow italic">One Vision.</span>
-            </h2>
-            <p className="text-slate-400 max-w-xl mx-auto text-base font-light">
-              A coordinated team of specialized AI agents working together to
-              craft your perfect journey.
-            </p>
-          </motion.div>
+      {/* ===== DESTINATION MARQUEE ===== */}
+      <div className="marquee-mask relative z-10 overflow-hidden border-y border-white/5 py-5" aria-hidden="true">
+        <div className="animate-marquee flex w-max">
+          {[...DESTINATIONS, ...DESTINATIONS].map((d, i) => (
+            <span
+              key={i}
+              className="mr-10 inline-flex items-center gap-10 text-slate-300 text-sm uppercase tracking-[0.3em]"
+            >
+              {d}
+              <span className="w-1 h-1 rounded-full bg-sky-400/50" />
+            </span>
+          ))}
+        </div>
+      </div>
 
-          {/* Feature grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {features.map((feature, i) => (
-              <motion.div
-                key={feature.title}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: '-50px' }}
-                transition={{
-                  duration: 0.6,
-                  delay: i * 0.1,
-                  ease: [0.16, 1, 0.3, 1],
-                }}
-                className={`glass-card-premium p-7 group hover:shadow-[0_12px_48px_rgba(56,189,248,0.08)] transition-all duration-300`}
-              >
-                <div
-                  className={`w-12 h-12 rounded-xl bg-gradient-to-br ${feature.gradient} border ${feature.border} flex items-center justify-center mb-5 ${feature.iconColor} group-hover:scale-110 transition-transform duration-300`}
-                >
-                  {feature.icon}
-                </div>
-                <h3 className="text-lg font-bold text-white mb-2.5">
-                  {feature.title}
-                </h3>
-                <p className="text-sm text-slate-400 leading-relaxed font-light">
-                  {feature.description}
-                </p>
-              </motion.div>
-            ))}
-          </div>
+      {/* ===== STATS ===== */}
+      <section className="relative z-10 px-6 py-16">
+        <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8">
+          {STATS.map((s) => (
+            <div key={s.label} className="text-center">
+              <p className="text-4xl md:text-5xl font-bold text-white">
+                <CountUp to={s.to} suffix={s.suffix} />
+              </p>
+              <p className="text-[11px] uppercase tracking-[0.25em] text-slate-300 mt-2">
+                {s.label}
+              </p>
+            </div>
+          ))}
         </div>
       </section>
 
-      {/* ===== HOW IT WORKS ===== */}
+      {/* ===== AGENT SPOTLIGHT (interactive) ===== */}
       <section className="relative z-10 px-6 py-24 md:py-32">
         <div className="max-w-5xl mx-auto">
           <motion.div
@@ -303,139 +387,166 @@ export default function Landing() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: '-100px' }}
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-            className="text-center mb-20"
+            className="text-center mb-14"
           >
-            <p className="text-[10px] font-bold text-teal uppercase tracking-[0.3em] mb-4">
-              How It Works
+            <p className="text-[10px] font-bold text-sky-300 uppercase tracking-[0.3em] mb-4">
+              Meet the crew
             </p>
-            <h2 className="text-4xl md:text-5xl font-bold text-white">
-              Three Steps to{' '}
-              <span className="text-gradient-teal italic">Extraordinary</span>
+            <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
+              Six agents.{' '}
+              <span className="accent-label italic">One journey.</span>
             </h2>
+            <p className="text-slate-200 max-w-xl mx-auto text-base font-light">
+              Tap an agent to see what it handles — or let it cycle through.
+            </p>
           </motion.div>
 
-          <div className="space-y-16">
-            {[
-              {
-                step: '01',
-                title: 'Tell Us Where',
-                description:
-                  'Enter your destination, set your dates, pick your pace and interests. From budget tier to dietary needs — every detail matters.',
-                icon: <MapPin className="w-6 h-6 text-primary" />,
-                color: 'primary',
-              },
-              {
-                step: '02',
-                title: 'AI Agents Architect',
-                description:
-                  'Six specialized agents — Travel Advisor, Weather Analyst, Budget Optimizer, Local Expert, Transport Planner, and Itinerary Architect — collaborate in real-time.',
-                icon: <Clock className="w-6 h-6 text-teal" />,
-                color: 'teal',
-              },
-              {
-                step: '03',
-                title: 'Explore Your Journey',
-                description:
-                  'Receive a rich, interactive itinerary with cost breakdowns, local cultural insights, transport routes, and weather intelligence — all in one beautiful interface.',
-                icon: <Sparkles className="w-6 h-6 text-amber" />,
-                color: 'amber',
-              },
-            ].map((item, i) => (
-              <motion.div
-                key={item.step}
-                initial={{ opacity: 0, x: i % 2 === 0 ? -30 : 30 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true, margin: '-80px' }}
-                transition={{
-                  duration: 0.7,
-                  delay: i * 0.15,
-                  ease: [0.16, 1, 0.3, 1],
-                }}
-                className="flex items-start gap-8 md:gap-12"
-              >
-                <div
-                  className={`shrink-0 w-16 h-16 rounded-2xl bg-${item.color}/10 border border-${item.color}/20 flex items-center justify-center relative`}
+          <div
+            onMouseEnter={() => setPaused(true)}
+            onMouseLeave={() => setPaused(false)}
+          >
+            <div className="flex flex-wrap justify-center gap-2 mb-10">
+              {AGENTS.map((a, i) => (
+                <button
+                  key={a.id}
+                  onClick={() => setActive(i)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm border backdrop-blur-md transition-all duration-300 ${
+                    i === active
+                      ? 'border-sky-400 bg-sky-400 text-[#05070a] font-semibold shadow-[0_6px_20px_rgba(56,189,248,0.35)]'
+                      : 'border-white/15 bg-[#0c0e12]/80 text-slate-200 hover:bg-[#0c0e12]/95 hover:text-white'
+                  }`}
                 >
-                  {item.icon}
-                  <span className="absolute -top-2 -right-2 text-[9px] font-bold text-slate-500 bg-[#0c0e12] px-1.5 py-0.5 rounded-md border border-white/5">
-                    {item.step}
-                  </span>
+                  <a.Icon className="w-4 h-4" />
+                  {a.name}
+                </button>
+              ))}
+            </div>
+
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={A.id}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                className="flat-card p-8 md:p-10 max-w-3xl mx-auto text-left"
+              >
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-12 h-12 rounded-xl border border-sky-400/20 bg-sky-400/10 flex items-center justify-center text-sky-300">
+                    <A.Icon className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.3em] text-sky-300">
+                      {A.role}
+                    </p>
+                    <h3 className="text-xl font-bold text-white">{A.name}</h3>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-xl font-bold text-white mb-2">
-                    {item.title}
-                  </h3>
-                  <p className="text-sm text-slate-400 leading-relaxed font-light max-w-lg">
-                    {item.description}
-                  </p>
+                <p className="text-slate-400 font-light leading-relaxed mb-5">
+                  {A.blurb}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {A.tags.map((t) => (
+                    <span
+                      key={t}
+                      className="text-xs px-3 py-1 rounded-full border border-white/15 bg-white/[0.06] text-slate-200"
+                    >
+                      {t}
+                    </span>
+                  ))}
                 </div>
               </motion.div>
-            ))}
+            </AnimatePresence>
           </div>
         </div>
       </section>
 
-      {/* ===== CTA SECTION ===== */}
+      {/* ===== HOW IT WORKS (interactive stepper) ===== */}
       <section className="relative z-10 px-6 py-24 md:py-32">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-100px' }}
-          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-          className="max-w-4xl mx-auto text-center"
-        >
-          <div className="glass-card-premium p-12 md:p-16 relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-teal/5" />
-            <div className="relative z-10">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-teal/10 border border-primary/20 flex items-center justify-center mx-auto mb-8">
-                <Diamond className="w-8 h-8 text-primary drop-shadow-[0_0_12px_rgba(56,189,248,0.4)]" />
-              </div>
-              <h2 className="text-4xl md:text-5xl font-bold text-white mb-4 leading-tight">
-                Ready to Discover
-                <br />
-                <span className="text-gradient-rainbow italic">
-                  Something Extraordinary?
-                </span>
-              </h2>
-              <p className="text-slate-400 mb-10 max-w-lg mx-auto font-light">
-                Let XPLORA's AI agents research, design, and craft a travel
-                experience uniquely yours.
-              </p>
+        <div className="max-w-4xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: '-100px' }}
+            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+            className="text-center mb-14"
+          >
+            <p className="text-[10px] font-bold text-sky-300 uppercase tracking-[0.3em] mb-4">
+              How it works
+            </p>
+            <h2 className="text-4xl md:text-5xl font-bold text-white">
+              Three steps to{' '}
+              <span className="accent-label italic">extraordinary</span>
+            </h2>
+          </motion.div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            {STEPS.map((s, i) => (
               <button
-                onClick={() => navigate('/app')}
-                className="group relative text-white font-bold py-4 px-12 rounded-2xl shadow-[0_5px_30px_rgba(56,189,248,0.35)] hover:shadow-[0_8px_50px_rgba(56,189,248,0.55)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 flex items-center gap-3 tracking-[0.12em] text-sm mx-auto overflow-hidden"
-                style={{
-                  background:
-                    'linear-gradient(135deg, #38bdf8 0%, #0284c7 25%, #2dd4bf 65%, #0d9488 100%)',
-                  backgroundSize: '200% 200%',
-                  animation: 'gradient-shift 4s ease-in-out infinite',
-                }}
+                key={s.title}
+                onClick={() => setStep(i)}
+                className={`text-left p-5 rounded-2xl border backdrop-blur-md transition-all duration-300 ${
+                  i === step
+                    ? 'border-sky-400/60 bg-[#0c0e12]/90'
+                    : 'border-white/15 bg-[#0c0e12]/75 hover:bg-[#0c0e12]/90'
+                }`}
               >
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 -skew-x-12 translate-x-[-100%] group-hover:translate-x-[100%] duration-1000" />
-                <Zap className="w-5 h-5 relative z-10" />
-                <span className="relative z-10">VIEW THE APPLICATION</span>
-                <ArrowRight className="w-5 h-5 relative z-10 group-hover:translate-x-1 transition-transform duration-300" />
+                <div className="flex items-center justify-between mb-3">
+                  <span
+                    className={`w-9 h-9 rounded-lg flex items-center justify-center border transition-colors duration-300 ${
+                      i === step
+                        ? 'border-sky-400/50 text-sky-300'
+                        : 'border-white/15 text-slate-300'
+                    }`}
+                  >
+                    <s.Icon className="w-4 h-4" />
+                  </span>
+                  <span className="text-[10px] text-slate-400 tracking-[0.3em]">
+                    0{i + 1}
+                  </span>
+                </div>
+                <p className="font-bold text-white">{s.title}</p>
               </button>
-            </div>
+            ))}
           </div>
-        </motion.div>
+
+          <div className="h-[2px] w-full bg-white/5 rounded-full overflow-hidden mb-8">
+            <motion.div
+              className="h-full bg-sky-400/60"
+              animate={{ width: `${((step + 1) / STEPS.length) * 100}%` }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            />
+          </div>
+
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={step}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.35 }}
+              className="text-slate-100 font-light max-w-xl mx-auto text-center leading-relaxed"
+            >
+              {STEPS[step].body}
+            </motion.p>
+          </AnimatePresence>
+        </div>
       </section>
 
       {/* ===== FOOTER ===== */}
       <footer className="relative z-10 border-t border-white/5 py-12 px-6">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-3">
-            <div className="bg-gradient-to-br from-primary/20 to-primary/5 p-2 rounded-xl border border-primary/10">
-              <Diamond className="w-4 h-4 text-primary" />
+            <div className="bg-gradient-to-br from-sky-400/20 to-sky-400/5 p-2 rounded-xl border border-sky-400/10">
+              <BrandMark className="w-4 h-4 text-sky-300" />
             </div>
             <span className="text-sm font-bold text-white tracking-tight">
-              <span className="text-gradient-shimmer">XPLORA</span>
+              <span className="wordmark">XPLORA</span>
             </span>
             <span className="text-[10px] text-slate-600 italic tracking-wider">
               Intelligent Travel Architect
             </span>
           </div>
-
         </div>
       </footer>
     </div>

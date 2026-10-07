@@ -72,9 +72,9 @@ function destinationKey(destination: string, prefix: string): string {
 
 const CATEGORY_META: Record<PackCategory, { accent: string; dot: string }> = {
   Essentials: { accent: 'text-sky-300', dot: 'bg-sky-400' },
-  Clothing: { accent: 'text-teal-300', dot: 'bg-teal-400' },
-  'Tech/Health': { accent: 'text-amber-300', dot: 'bg-amber-400' },
-  Docs: { accent: 'text-fuchsia-300', dot: 'bg-fuchsia-400' },
+  Clothing: { accent: 'text-sky-300', dot: 'bg-sky-400' },
+  'Tech/Health': { accent: 'text-sky-300', dot: 'bg-sky-400' },
+  Docs: { accent: 'text-slate-300', dot: 'bg-slate-700' },
 };
 
 // ---------------------------------------------------------------------------
@@ -149,10 +149,10 @@ export default function SmartPackTracker({
   const spentPct = totalHigh > 0 ? Math.min(100, Math.round((spent / totalHigh) * 100)) : 0;
   const barColor =
     spentPct < 60
-      ? 'bg-gradient-to-r from-emerald-400 to-teal-400'
+      ? 'bg-gradient-to-r from-slate-500 to-sky-400'
       : spentPct <= 85
-        ? 'bg-gradient-to-r from-amber-400 to-orange-400'
-        : 'bg-gradient-to-r from-rose-500 to-rose-400';
+        ? 'bg-gradient-to-r from-sky-400 to-orange-400'
+        : 'bg-gradient-to-r from-slate-500 to-slate-500';
   const statusLabel = remaining >= 0 ? 'On track' : 'Over budget';
 
   // ---- Grouped categories for rendering ------------------------------------
@@ -169,12 +169,12 @@ export default function SmartPackTracker({
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
       {/* ============================== SMART PACK ============================== */}
-      <div className="glass-card-premium p-6 relative overflow-hidden">
-        <div className="absolute -top-12 -right-12 w-36 h-36 bg-primary/10 blur-3xl rounded-full pointer-events-none"></div>
+      <div className="flat-card p-6 relative overflow-hidden">
+        <div className="absolute -top-12 -right-12 w-36 h-36 bg-sky-400/10 blur-3xl rounded-full pointer-events-none"></div>
         <div className="flex items-start justify-between gap-4 mb-5 relative z-10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/25 to-teal/10 border border-primary/20 flex items-center justify-center shrink-0">
-              <Luggage className="w-5 h-5 text-primary" />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-400/25 to-sky-400/10 border border-sky-400/20 flex items-center justify-center shrink-0">
+              <Luggage className="w-5 h-5 text-sky-300" />
             </div>
             <div>
               <h3 className="text-white font-bold tracking-wide leading-tight">Smart Pack</h3>
@@ -196,7 +196,7 @@ export default function SmartPackTracker({
         {/* Progress bar */}
         <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden mb-5 relative z-10">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-primary via-teal to-amber transition-all duration-500"
+            className="h-full rounded-full bg-gradient-to-r from-sky-400 via-sky-400 to-sky-400 transition-all duration-500"
             style={{ width: `${packedPct}%` }}
           ></div>
         </div>
@@ -217,7 +217,7 @@ export default function SmartPackTracker({
                       key={item.id}
                       className={`flex items-start gap-3 px-3 py-2 rounded-xl border transition-all duration-300 cursor-pointer group/row ${
                         isChecked
-                          ? 'bg-primary/[0.06] border-primary/20'
+                          ? 'bg-sky-400/[0.06] border-sky-400/20'
                           : 'bg-white/[0.02] border-white/[0.05] hover:bg-white/[0.05] hover:border-white/10'
                       }`}
                     >
@@ -234,7 +234,7 @@ export default function SmartPackTracker({
                       >
                         {item.label}
                       </span>
-                      {isChecked && <Check className="w-3.5 h-3.5 text-primary ml-auto shrink-0 mt-0.5" />}
+                      {isChecked && <Check className="w-3.5 h-3.5 text-sky-300 ml-auto shrink-0 mt-0.5" />}
                     </label>
                   );
                 })}
@@ -249,30 +249,30 @@ export default function SmartPackTracker({
         {/* Footer chips */}
         <div className="mt-5 pt-4 border-t border-white/[0.06] flex flex-wrap gap-2 relative z-10">
           <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-slate-400 bg-white/[0.04] border border-white/[0.06] rounded-full px-3 py-1.5">
-            <Sun className="w-3 h-3 text-amber-400" />
+            <Sun className="w-3 h-3 text-sky-300" />
             Best times: {(weather?.best_times && weather.best_times.length > 0 ? weather.best_times.join(' • ') : '—')}
           </span>
           <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-slate-400 bg-white/[0.04] border border-white/[0.06] rounded-full px-3 py-1.5">
-            <Thermometer className="w-3 h-3 text-rose-400" />
+            <Thermometer className="w-3 h-3 text-slate-300" />
             Expected: {typicalRange}
           </span>
         </div>
       </div>
 
       {/* ============================ FX BUDGET TRACKER ============================ */}
-      <div className="glass-card-premium p-6 relative overflow-hidden">
-        <div className="absolute -bottom-12 -left-12 w-36 h-36 bg-teal/10 blur-3xl rounded-full pointer-events-none"></div>
+      <div className="flat-card p-6 relative overflow-hidden">
+        <div className="absolute -bottom-12 -left-12 w-36 h-36 bg-sky-400/10 blur-3xl rounded-full pointer-events-none"></div>
         <div className="flex items-start justify-between gap-4 mb-5 relative z-10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal/25 to-emerald/10 border border-teal/20 flex items-center justify-center shrink-0">
-              <Receipt className="w-5 h-5 text-teal-400" />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-400/25 to-slate-500/10 border border-sky-400/20 flex items-center justify-center shrink-0">
+              <Receipt className="w-5 h-5 text-sky-300" />
             </div>
             <div>
               <h3 className="text-white font-bold tracking-wide leading-tight">Budget Tracker</h3>
               <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{name}</p>
             </div>
           </div>
-          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-primary bg-primary/10 border border-primary/25 rounded-full px-3 py-1.5 whitespace-nowrap shrink-0">
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-sky-300 bg-sky-400/10 border border-sky-400/25 rounded-full px-3 py-1.5 whitespace-nowrap shrink-0">
             Tier: {tier}
           </span>
         </div>
@@ -301,7 +301,7 @@ export default function SmartPackTracker({
         <div className="space-y-1 mb-5 relative z-10">
           {(Object.keys(COST_CATEGORY_LABELS) as CostCategory[]).map((cat, idx) => {
             const [catLow, catHigh] = costTiers[cat];
-            const dotColors = ['bg-sky-400', 'bg-emerald-400', 'bg-teal-400', 'bg-amber-400', 'bg-indigo-400', 'bg-fuchsia-400', 'bg-rose-400'];
+            const dotColors = ['bg-sky-400', 'bg-slate-600', 'bg-sky-400', 'bg-sky-400', 'bg-slate-700', 'bg-slate-700', 'bg-slate-700'];
             return (
               <div
                 key={cat}
@@ -325,7 +325,7 @@ export default function SmartPackTracker({
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Spent so far ({code})</label>
             <span
               className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full ${
-                remaining >= 0 ? 'text-emerald-400 bg-emerald-400/10 border border-emerald-400/20' : 'text-rose-400 bg-rose-400/10 border border-rose-400/20'
+                remaining >= 0 ? 'text-slate-300 bg-slate-600/10 border border-white/20' : 'text-slate-300 bg-slate-700/10 border border-white/20'
               }`}
             >
               {statusLabel}
@@ -341,7 +341,7 @@ export default function SmartPackTracker({
               value={spentText}
               placeholder="0"
               onChange={(e) => setSpentText(e.target.value)}
-              className="w-full bg-[#0c0e12] border border-white/10 rounded-xl px-3 py-2 text-sm font-bold text-white focus:border-teal/50 focus:outline-none transition-all duration-300 tabular-nums"
+              className="w-full bg-[#0c0e12] border border-white/10 rounded-xl px-3 py-2 text-sm font-bold text-white focus:border-sky-400/50 focus:outline-none transition-all duration-300 tabular-nums"
             />
           </div>
           <input
@@ -357,7 +357,7 @@ export default function SmartPackTracker({
           <div className="flex items-center justify-between mt-3 gap-3">
             <div>
               <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Remaining</div>
-              <div className={`text-sm font-bold tabular-nums ${remaining >= 0 ? 'text-white' : 'text-rose-400'}`}>
+              <div className={`text-sm font-bold tabular-nums ${remaining >= 0 ? 'text-white' : 'text-slate-300'}`}>
                 {remaining < 0 ? '-' : ''}
                 {fmt(Math.abs(remaining))}
               </div>
@@ -365,7 +365,7 @@ export default function SmartPackTracker({
             {groupSize > 1 && (
               <div className="text-right">
                 <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Group total ({groupSize})</div>
-                <div className="text-sm font-bold text-teal-300 tabular-nums">{fmt(Math.round(spent * groupSize))}</div>
+                <div className="text-sm font-bold text-sky-300 tabular-nums">{fmt(Math.round(spent * groupSize))}</div>
               </div>
             )}
           </div>

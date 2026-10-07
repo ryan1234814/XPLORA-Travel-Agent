@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  Diamond,
   Download,
   MapPin,
   Calendar,
@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
+import BrandMark from './components/BrandMark';
 
 // Lightweight web-research fallback used when the backend is unreachable or returns no LLM data.
 // It uses DuckDuckGo HTML search to build a usable itinerary/weather so the app still works.
@@ -152,6 +153,7 @@ import { API_BASE_URL } from './utils/apiBase';
 export interface ActivityData {
   time: string;
   title: string;
+  place_name?: string;
   description: string;
   location: string;
   tag: string;
@@ -186,7 +188,12 @@ export interface MobilityData {
   car_rentals?: any;
   airport_transfers?: any;
   local_transport?: any;
-  route_optimization?: any;
+  route_optimization?: {
+    strategy?: string;
+    suggested_area_groupings?: string[];
+    sample_day_route_stops?: string[];
+    google_maps_directions_url?: string;
+  };
 }
 
 export interface WeatherData {
@@ -229,6 +236,8 @@ function App() {
   const [budget, setBudget] = useState('Premier');
   const [selectedInterests, setSelectedInterests] = useState(['Wellness', 'Gastronomy']);
   const [travelDates, setTravelDates] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [groupSize, setGroupSize] = useState(2);
   const [groupType, setGroupType] = useState('Couple');
   const [dietaryRequirements, setDietaryRequirements] = useState<string[]>([]);
@@ -248,9 +257,9 @@ function App() {
   const [activeTab, setActiveTab] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [expandedMobility, setExpandedMobility] = useState<string | null>(null);
+  const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<'itinerary' | 'ask'>('itinerary');
   const [showMorePrefs, setShowMorePrefs] = useState(false);
-  const [appRevealed, setAppRevealed] = useState(false);
 
   const toggleInterest = (id: string) => {
     setSelectedInterests(prev =>
@@ -436,6 +445,56 @@ function App() {
     }
   };
 
+  // Format an ISO yyyy-mm-dd pick into a readable, timezone-safe string
+  const fmtTravelDate = (v: string) => {
+    const [y, m, d] = v.split('-').map(Number);
+    if (!y || !m || !d) return v;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[m - 1]} ${d}, ${y}`;
+  };
+
+  // Calendar picks compose the travelDates string the backend already expects
+  const handleDatePick = (which: 'start' | 'end', value: string) => {
+    const s = which === 'start' ? value : startDate;
+    const e = which === 'end' ? value : endDate;
+    if (which === 'start') setStartDate(value);
+    else setEndDate(value);
+    if (!s && !e) setTravelDates('');
+    else if (s && e) setTravelDates(`${fmtTravelDate(s)} → ${fmtTravelDate(e)}`);
+    else setTravelDates(fmtTravelDate(s || e));
+  };
+
+  // Live route plot for the Mobility Strategy panel: prefer the backend's
+  // route_optimization output; otherwise build directions from the visible day's
+  // activity places. Needs >= 2 distinct stops to form a routable path.
+  const livePlot = useMemo(() => {
+    const route = mobility?.route_optimization;
+    let stops = (route?.sample_day_route_stops || []).filter((s): s is string => typeof s === 'string' && s.trim().length > 0);
+    let url = (route?.google_maps_directions_url || '').trim();
+    let source: 'backend' | 'itinerary' = 'backend';
+
+    if (stops.length === 0 && itinerary?.days?.[activeTab]?.activities?.length) {
+      stops = itinerary.days[activeTab].activities
+        .map(a => {
+          const place = a.place_name || (a.map_query && !/\b(in|at)\b/i.test(a.map_query) ? a.map_query : '') || a.location;
+          if (!place) return '';
+          return place.includes(',') ? place : `${place}, ${destination}`;
+        })
+        .filter(Boolean);
+      stops = Array.from(new Set(stops.map(s => s.toLowerCase()))).map(l => stops[stops.findIndex(s => s.toLowerCase() === l)]);
+      url = '';
+      source = 'itinerary';
+    }
+
+    if (stops.length < 2) return null;
+    if (!url) {
+      const [originStop, destStop, ...midStops] = stops;
+      url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(originStop)}&destination=${encodeURIComponent(destStop)}` +
+        (midStops.length ? `&waypoints=${encodeURIComponent(midStops.join('|'))}` : '');
+    }
+    return { stops, url, source };
+  }, [mobility, itinerary, activeTab, destination]);
+
   const handleReset = () => {
     setItinerary(null);
     setMobility(null);
@@ -447,6 +506,8 @@ function App() {
     setBudget('Premier');
     setSelectedInterests(['Wellness', 'Gastronomy']);
     setTravelDates('');
+    setStartDate('');
+    setEndDate('');
     setGroupSize(2);
     setGroupType('Couple');
     setDietaryRequirements([]);
@@ -479,67 +540,46 @@ function App() {
   };
 
   return (
-    <div className="main-gradient min-h-screen font-outfit text-slate-200">
-      {/* Floating particle stars */}
-      <div className="stars-container" aria-hidden="true">
-        {Array.from({ length: 50 }).map((_, i) => (
-          <div
-            key={i}
-            className="star"
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              width: `${Math.random() * 2.5 + 1}px`,
-              height: `${Math.random() * 2.5 + 1}px`,
-              animationDelay: `${Math.random() * 15}s`,
-              animationDuration: `${Math.random() * 10 + 10}s`,
-              background: ['#38bdf8', '#2dd4bf', '#fbbf24', '#fb7185', '#e879f9', '#ffffff'][Math.floor(Math.random() * 6)],
-              opacity: Math.random() * 0.5 + 0.1,
-            }}
-          />
-        ))}
-      </div>
-
-      {/* Extra ambient glowing orbs */}
-      <div className="glow-orb glow-orb--primary" style={{ top: '15%', left: '-10%' }}></div>
-      <div className="glow-orb glow-orb--accent" style={{ top: '60%', right: '-5%' }}></div>
-      <div className="glow-orb glow-orb--amber" style={{ bottom: '10%', left: '30%' }}></div>
-
-      {appRevealed ? (
+    <div className="main-gradient min-h-screen text-slate-200">
       <>
       {/* Top Header Bar: branding + view toggle */}
       <header className="sticky top-0 z-30 bg-[#0c0e12]/90 backdrop-blur-md border-b border-white/5 relative">
-        <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-primary via-teal via-amber to-rose opacity-60"></div>
+        <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-sky-400 via-sky-400 via-sky-400 to-slate-500 opacity-60"></div>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="bg-gradient-to-br from-primary/25 via-teal/15 to-secondary/20 p-2.5 rounded-2xl border border-primary/10 shadow-[0_0_30px_rgba(56,189,248,0.2)]">
-              <Diamond className="w-6 h-6 text-primary drop-shadow-[0_0_8px_rgba(56,189,248,0.5)]" />
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            title="Back to home"
+            className="flex items-center gap-3 text-left cursor-pointer group"
+          >
+            <div className="bg-gradient-to-br from-sky-400/25 via-sky-400/15 to-sky-400/20 p-2.5 rounded-2xl border border-sky-400/10 shadow-[0_0_30px_rgba(56,189,248,0.2)] transition-transform duration-300 group-hover:scale-105">
+              <BrandMark className="w-6 h-6 text-sky-300 drop-shadow-[0_0_8px_rgba(56,189,248,0.5)]" />
             </div>
             <div>
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white leading-tight">
-                <span className="text-gradient-shimmer">XPLORA</span>
+                <span className="wordmark">XPLORA</span>
               </h1>
               <p className="text-[9px] sm:text-[10px] text-slate-500 italic tracking-[0.15em]">Intelligent Travel Architect</p>
             </div>
-          </div>
+          </button>
           {/* View mode toggle */}
           <div className="flex gap-2 shrink-0">
             <button
               onClick={() => handleResetAndSwitch('itinerary')}
               className={`px-3 sm:px-4 py-2 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all duration-300 border ${viewMode === 'itinerary'
-                ? 'bg-gradient-to-br from-primary/25 to-primary/10 border-primary/50 text-white shadow-[0_0_15px_rgba(56,189,248,0.1)]'
+                ? 'bg-gradient-to-br from-sky-400/25 to-sky-400/10 border-sky-400/50 text-white shadow-[0_0_15px_rgba(56,189,248,0.1)]'
                 : 'bg-white/[0.04] border-white/[0.06] text-slate-400 hover:bg-white/[0.08] hover:text-slate-300'
               }`}
             >
               <span className="flex items-center justify-center gap-1.5">
-                <Diamond className="w-3.5 h-3.5" />
+                <BrandMark className="w-3.5 h-3.5" />
                 Itinerary
               </span>
             </button>
             <button
               onClick={() => handleResetAndSwitch('ask')}
               className={`px-3 sm:px-4 py-2 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all duration-300 border ${viewMode === 'ask'
-                ? 'bg-gradient-to-br from-teal/25 to-teal/10 border-teal/50 text-white shadow-[0_0_15px_rgba(45,212,191,0.1)]'
+                ? 'bg-gradient-to-br from-sky-400/25 to-sky-400/10 border-sky-400/50 text-white shadow-[0_0_15px_rgba(56,189,248,0.1)]'
                 : 'bg-white/[0.04] border-white/[0.06] text-slate-400 hover:bg-white/[0.08] hover:text-slate-300'
               }`}
             >
@@ -556,19 +596,19 @@ function App() {
       {viewMode === 'itinerary' && (
       <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-6">
         <div className="bg-[#0c0e12]/70 border border-white/10 rounded-2xl p-5 sm:p-6 space-y-5 relative">
-          <div className="absolute top-0 left-6 right-6 h-[1px] bg-gradient-to-r from-transparent via-primary/30 to-transparent"></div>
+          <div className="absolute top-0 left-6 right-6 h-[1px] bg-gradient-to-r from-transparent via-sky-400/30 to-transparent"></div>
           {/* Row 1: primary fields */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] ml-1">Origin (Optional)</label>
               <div className="relative group input-glow rounded-xl">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-primary transition-colors duration-300" />
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-sky-300 transition-colors duration-300" />
                 <input
                   type="text"
                   value={origin}
                   onChange={(e) => setOrigin(e.target.value)}
                   placeholder="e.g. New Delhi (DEL)"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-10 pr-4 text-sm focus:border-primary/50 focus:bg-primary/[0.06] focus:shadow-[0_0_20px_rgba(56,189,248,0.06)] transition-all duration-300 outline-none"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-10 pr-4 text-sm focus:border-sky-400/50 focus:bg-sky-400/[0.06] focus:shadow-[0_0_20px_rgba(56,189,248,0.06)] transition-all duration-300 outline-none"
                 />
               </div>
             </div>
@@ -576,7 +616,7 @@ function App() {
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] ml-1">Destination</label>
               <div className="relative group input-glow rounded-xl">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-primary transition-colors duration-300" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-sky-300 transition-colors duration-300" />
                 <input
                   type="text"
                   value={destination}
@@ -585,7 +625,7 @@ function App() {
                     if (fieldErrors.destination) setFieldErrors(prev => { const n = {...prev}; delete n.destination; return n; });
                   }}
                   placeholder="e.g. Kyoto, Japan"
-                  className={`w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-10 pr-4 text-sm focus:border-primary/50 focus:bg-primary/[0.06] focus:shadow-[0_0_20px_rgba(56,189,248,0.06)] transition-all duration-300 outline-none font-medium ${fieldErrorClass('destination')}`}
+                  className={`w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-10 pr-4 text-sm focus:border-sky-400/50 focus:bg-sky-400/[0.06] focus:shadow-[0_0_20px_rgba(56,189,248,0.06)] transition-all duration-300 outline-none font-medium ${fieldErrorClass('destination')}`}
                 />
                 <InlineError field="destination" />
               </div>
@@ -594,7 +634,7 @@ function App() {
             <div className="space-y-4">
               <div className="flex justify-between items-center px-1">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Duration</label>
-                <span className="text-xs font-bold text-primary px-3 py-1.5 bg-gradient-to-r from-primary/15 to-primary/5 rounded-lg border border-primary/10 shadow-[0_0_15px_rgba(56,189,248,0.08)]">{duration} Days</span>
+                <span className="text-xs font-bold text-sky-300 px-3 py-1.5 bg-gradient-to-r from-sky-400/15 to-sky-400/5 rounded-lg border border-sky-400/10 shadow-[0_0_15px_rgba(56,189,248,0.08)]">{duration} Days</span>
               </div>
               <input
                 type="range"
@@ -618,7 +658,7 @@ function App() {
                   setBudget(e.target.value);
                   if (fieldErrors.budget) setFieldErrors(prev => { const n = {...prev}; delete n.budget; return n; });
                 }}
-                className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 text-sm focus:border-primary/50 transition-all duration-300 outline-none appearance-none cursor-pointer hover:bg-white/[0.07]"
+                className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 text-sm focus:border-sky-400/50 transition-all duration-300 outline-none appearance-none cursor-pointer hover:bg-white/[0.07]"
               >
                 {budgetTiers.map(tier => (
                   <option key={tier} value={tier} className="bg-[#0c0e12]">{tier}</option>
@@ -637,11 +677,11 @@ function App() {
                     key={item.id}
                     onClick={() => toggleInterest(item.id)}
                     className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 border ${selectedInterests.includes(item.id)
-                      ? 'bg-gradient-to-br from-primary/25 to-primary/10 border-primary/50 text-white shadow-[0_0_20px_rgba(56,189,248,0.1)] hover:shadow-[0_0_30px_rgba(56,189,248,0.2)]'
+                      ? 'bg-gradient-to-br from-sky-400/25 to-sky-400/10 border-sky-400/50 text-white shadow-[0_0_20px_rgba(56,189,248,0.1)] hover:shadow-[0_0_30px_rgba(56,189,248,0.2)]'
                       : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10 hover:border-white/10 hover:text-slate-300'
                       }`}
                   >
-                    <span className={`transition-all duration-300 ${selectedInterests.includes(item.id) ? 'text-primary scale-110' : 'text-slate-500'}`}>
+                    <span className={`transition-all duration-300 ${selectedInterests.includes(item.id) ? 'text-sky-300 scale-110' : 'text-slate-500'}`}>
                       {item.icon}
                     </span>
                     {item.id}
@@ -657,14 +697,39 @@ function App() {
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] ml-1">Travel Dates</label>
               <div className="relative group input-glow rounded-xl">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-primary transition-colors duration-300" />
+                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-sky-300 transition-colors duration-300" />
                 <input
                   type="text"
                   value={travelDates}
                   onChange={(e) => setTravelDates(e.target.value)}
                   placeholder="e.g. Spring 2026, Dec 15-22"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-10 pr-4 text-sm focus:border-primary/50 focus:bg-primary/[0.06] focus:shadow-[0_0_20px_rgba(56,189,248,0.06)] transition-all duration-300 outline-none"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-10 pr-4 text-sm focus:border-sky-400/50 focus:bg-sky-400/[0.06] focus:shadow-[0_0_20px_rgba(56,189,248,0.06)] transition-all duration-300 outline-none"
                 />
+              </div>
+              {/* Calendar picker — choosing dates fills the field above */}
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block space-y-1">
+                  <span className="text-[9px] text-slate-500 uppercase tracking-[0.15em] ml-1">From</span>
+                  <input
+                    type="date"
+                    value={startDate}
+                    max={endDate || undefined}
+                    onChange={(e) => handleDatePick('start', e.target.value)}
+                    aria-label="Start date of travel"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-sky-400/50 focus:bg-sky-400/[0.06] focus:shadow-[0_0_20px_rgba(56,189,248,0.06)] transition-all duration-300 outline-none"
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-[9px] text-slate-500 uppercase tracking-[0.15em] ml-1">To</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    min={startDate || undefined}
+                    onChange={(e) => handleDatePick('end', e.target.value)}
+                    aria-label="End date of travel"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-sky-400/50 focus:bg-sky-400/[0.06] focus:shadow-[0_0_20px_rgba(56,189,248,0.06)] transition-all duration-300 outline-none"
+                  />
+                </label>
               </div>
             </div>
 
@@ -672,7 +737,7 @@ function App() {
             <div className="space-y-2">
               <div className="flex justify-between items-center px-1">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Group Size</label>
-                <span className="text-xs font-bold text-primary px-3 py-1.5 bg-gradient-to-r from-primary/15 to-primary/5 rounded-lg border border-primary/10 shadow-[0_0_15px_rgba(56,189,248,0.08)]">{groupSize}</span>
+                <span className="text-xs font-bold text-sky-300 px-3 py-1.5 bg-gradient-to-r from-sky-400/15 to-sky-400/5 rounded-lg border border-sky-400/10 shadow-[0_0_15px_rgba(56,189,248,0.08)]">{groupSize}</span>
               </div>
               <input
                 type="range"
@@ -695,7 +760,7 @@ function App() {
                       if (fieldErrors.groupType) setFieldErrors(prev => { const n = {...prev}; delete n.groupType; return n; });
                     }}
                     className={`px-3 py-2 rounded-xl text-xs font-medium transition-all duration-300 border ${groupType === type
-                      ? 'bg-gradient-to-br from-primary/25 to-primary/10 border-primary/50 text-white shadow-[0_0_15px_rgba(56,189,248,0.1)]'
+                      ? 'bg-gradient-to-br from-sky-400/25 to-sky-400/10 border-sky-400/50 text-white shadow-[0_0_15px_rgba(56,189,248,0.1)]'
                       : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10 hover:border-white/10'
                     }`}
                   >
@@ -717,7 +782,7 @@ function App() {
                       if (fieldErrors.pace) setFieldErrors(prev => { const n = {...prev}; delete n.pace; return n; });
                     }}
                     className={`px-3 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 border ${pace === p.id
-                      ? 'bg-gradient-to-br from-primary/25 to-primary/10 border-primary/50 text-white shadow-[0_0_15px_rgba(56,189,248,0.1)]'
+                      ? 'bg-gradient-to-br from-sky-400/25 to-sky-400/10 border-sky-400/50 text-white shadow-[0_0_15px_rgba(56,189,248,0.1)]'
                       : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10 hover:border-white/10'
                     }`}
                   >
@@ -737,7 +802,7 @@ function App() {
                     key={item}
                     onClick={() => toggleDietary(item)}
                     className={`px-3 py-2 rounded-xl text-[11px] font-medium transition-all duration-300 border ${dietaryRequirements.includes(item)
-                      ? 'bg-gradient-to-br from-emerald-500/25 to-emerald-500/10 border-emerald-500/50 text-white shadow-[0_0_15px_rgba(52,211,153,0.1)]'
+                      ? 'bg-gradient-to-br from-slate-500/25 to-slate-500/10 border-white/50 text-white shadow-[0_0_15px_rgba(56,189,248,0.1)]'
                       : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10 hover:border-white/10'
                     }`}
                   >
@@ -771,7 +836,7 @@ function App() {
                   setAccommodationPreference(e.target.value);
                   if (fieldErrors.accommodationPreference) setFieldErrors(prev => { const n = {...prev}; delete n.accommodationPreference; return n; });
                 }}
-                className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 text-sm focus:border-primary/50 transition-all duration-300 outline-none appearance-none cursor-pointer hover:bg-white/[0.07]"
+                className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 text-sm focus:border-sky-400/50 transition-all duration-300 outline-none appearance-none cursor-pointer hover:bg-white/[0.07]"
               >
                 {['No preference', 'Hotel', 'Hostel', 'Airbnb/Vacation Rental', 'Boutique/Heritage Stay', 'Camping/Glamping', 'Luxury Resort'].map((opt) => (
                   <option key={opt} value={opt} className="bg-[#0c0e12]">{opt}</option>
@@ -789,7 +854,7 @@ function App() {
                     key={item}
                     onClick={() => toggleAccessibility(item)}
                     className={`px-3 py-2 rounded-xl text-[11px] font-medium transition-all duration-300 border ${accessibility.includes(item)
-                      ? 'bg-gradient-to-br from-indigo-500/25 to-indigo-500/10 border-indigo-500/50 text-white shadow-[0_0_15px_rgba(129,140,248,0.1)]'
+                      ? 'bg-gradient-to-br from-slate-500/25 to-slate-500/10 border-white/50 text-white shadow-[0_0_15px_rgba(56,189,248,0.1)]'
                       : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10 hover:border-white/10'
                     }`}
                   >
@@ -809,7 +874,7 @@ function App() {
                   setOccasion(e.target.value);
                   if (fieldErrors.occasion) setFieldErrors(prev => { const n = {...prev}; delete n.occasion; return n; });
                 }}
-                className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 text-sm focus:border-primary/50 transition-all duration-300 outline-none appearance-none cursor-pointer hover:bg-white/[0.07]"
+                className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 text-sm focus:border-sky-400/50 transition-all duration-300 outline-none appearance-none cursor-pointer hover:bg-white/[0.07]"
               >
                 {["", "Honeymoon", "Birthday", "Anniversary", "Graduation", "Proposal", "Retirement", "Festival/Celebration"].map((opt) => (
                   <option key={opt} value={opt} className="bg-[#0c0e12]">{opt || 'None'}</option>
@@ -827,7 +892,7 @@ function App() {
                   setLanguagePreference(e.target.value);
                   if (fieldErrors.languagePreference) setFieldErrors(prev => { const n = {...prev}; delete n.languagePreference; return n; });
                 }}
-                className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 text-sm focus:border-primary/50 transition-all duration-300 outline-none appearance-none cursor-pointer hover:bg-white/[0.07]"
+                className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 text-sm focus:border-sky-400/50 transition-all duration-300 outline-none appearance-none cursor-pointer hover:bg-white/[0.07]"
               >
                 {['English only', 'Basic local phrases', 'Conversational local', 'Fluent local'].map((opt) => (
                   <option key={opt} value={opt} className="bg-[#0c0e12]">{opt}</option>
@@ -845,11 +910,11 @@ function App() {
                     key={r.id}
                     onClick={() => setRiskTolerance(r.id)}
                     className={`flex flex-col items-center gap-1.5 px-2 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 border ${riskTolerance === r.id
-                      ? 'bg-gradient-to-br from-amber-500/25 to-amber-500/10 border-amber-500/50 text-white shadow-[0_0_15px_rgba(245,158,11,0.1)]'
+                      ? 'bg-gradient-to-br from-sky-400/25 to-sky-400/10 border-sky-400/50 text-white shadow-[0_0_15px_rgba(56,189,248,0.1)]'
                       : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10 hover:border-white/10'
                     }`}
                   >
-                    <span className={riskTolerance === r.id ? 'text-amber-400' : 'text-slate-500'}>{r.icon}</span>
+                    <span className={riskTolerance === r.id ? 'text-sky-300' : 'text-slate-500'}>{r.icon}</span>
                     <span className="text-[10px]">{r.id}</span>
                   </button>
                 ))}
@@ -864,14 +929,12 @@ function App() {
             <button
               onClick={handleGenerate}
               disabled={isLoading}
-              className="flex-1 text-white font-bold py-4 px-6 rounded-xl shadow-[0_5px_25px_rgba(56,189,248,0.3)] hover:shadow-[0_8px_40px_rgba(56,189,248,0.5)] hover:shadow-[0_0_30px_rgba(45,212,191,0.2)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 disabled:opacity-50 disabled:translate-y-0 flex items-center justify-center gap-2.5 tracking-[0.12em] text-xs relative overflow-hidden group/btn"
-              style={{ background: 'linear-gradient(135deg, #38bdf8 0%, #0284c7 25%, #2dd4bf 65%, #0d9488 100%)', backgroundSize: '200% 200%', animation: 'gradient-shift 4s ease-in-out infinite' }}
+              className="btn-accent flex-1 font-bold py-4 px-6 rounded-xl disabled:opacity-50 disabled:translate-y-0 flex items-center justify-center gap-2.5 tracking-[0.12em] text-xs relative overflow-hidden group/btn"
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent opacity-0 group-hover/btn:opacity-100 transition-opacity duration-700 -skew-x-12 translate-x-[-100%] group-hover/btn:translate-x-[100%] duration-1000"></div>
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-teal/10 to-transparent opacity-0 group-hover/btn:opacity-100 transition-opacity duration-700"></div>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent opacity-0 group-hover/btn:opacity-100 transition-opacity duration-700 -skew-x-12 translate-x-[-100%] group-hover/btn:translate-x-[100%] duration-1000"></div>
               {isLoading ? (
                 <>
-                  <RefreshCcw className="w-4 h-4 animate-spin text-white/70" />
+                  <RefreshCcw className="w-4 h-4 animate-spin opacity-70" />
                   DESIGNING YOUR VOYAGE...
                 </>
               ) : (
@@ -883,7 +946,7 @@ function App() {
             </button>
             <button
               onClick={handleReset}
-              className="w-full sm:w-auto bg-white/[0.04] text-slate-400 font-bold py-4 sm:py-3.5 px-8 rounded-xl hover:bg-white/[0.08] hover:text-slate-300 hover:border-primary/20 transition-all duration-300 text-xs uppercase tracking-widest border border-white/[0.06] hover:border-teal/20 group/reset"
+              className="w-full sm:w-auto bg-white/[0.04] text-slate-400 font-bold py-4 sm:py-3.5 px-8 rounded-xl hover:bg-white/[0.08] hover:text-slate-300 hover:border-sky-400/20 transition-all duration-300 text-xs uppercase tracking-widest border border-white/[0.06] hover:border-sky-400/20 group/reset"
             >
               <span className="group-hover/reset:bg-gradient-to-r group-hover/reset:from-slate-300 group-hover/reset:to-slate-400 inline-block transition-all duration-300">RESET</span>
             </button>
@@ -906,12 +969,9 @@ function App() {
                 key="welcome"
                 className="min-h-[70vh] md:h-full flex flex-col items-center justify-center p-8 text-center max-w-3xl mx-auto relative"
               >
-                <div className="ambient-glow"></div>
-                <div className="ambient-glow--bottom"></div>
-                
                 <div className="relative mb-10">
-                  <div className="bg-gradient-to-br from-primary/15 via-primary/5 to-secondary/10 p-6 rounded-3xl border border-primary/20 relative z-10">
-                    <Diamond className="w-12 h-12 text-primary" />
+                  <div className="bg-gradient-to-br from-sky-400/15 via-sky-400/5 to-sky-400/10 p-6 rounded-3xl border border-sky-400/20 relative z-10">
+                    <BrandMark className="w-12 h-12 text-sky-300" />
                   </div>
                 </div>
 
@@ -927,68 +987,19 @@ function App() {
               </motion.div>
             ) : isLoading ? (
               <div key="loading" className="min-h-[70vh] md:h-full flex flex-col items-center justify-center gap-12 p-8 relative">
-                <div className="ambient-glow"></div>
-                <div className="ambient-glow--accent"></div>
-                <div className="relative">
+                <div className="relative w-36 h-36 flex items-center justify-center">
+                  <div className="absolute inset-0 rounded-full border-2 border-sky-400/15 border-t-sky-400 animate-spin" />
                   <motion.div
-                    className="w-36 h-36 rounded-full animate-spin-gradient"
-                    style={{
-                      border: '1.5px solid',
-                      borderColor: 'rgba(56,189,248,0.1)',
-                      borderTopColor: '#38bdf8',
-                      borderRightColor: '#2dd4bf',
-                      borderBottomColor: '#fbbf24',
-                      borderLeftColor: '#fb7185',
-                      boxShadow: '0 0 40px rgba(56,189,248,0.1)',
-                    }}
-                  ></motion.div>
-                  <motion.div
-                    className="absolute inset-0 flex items-center justify-center"
-                    animate={{ scale: [1, 1.1, 1], opacity: [0.7, 1, 0.7] }}
+                    animate={{ scale: [1, 1.08, 1], opacity: [0.7, 1, 0.7] }}
                     transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+                    className="bg-gradient-to-br from-sky-400/20 via-sky-400/10 to-sky-400/10 p-4 rounded-2xl border border-sky-400/10"
                   >
-                    <div className="bg-gradient-to-br from-primary/20 via-teal/10 to-amber/10 p-4 rounded-2xl border border-primary/10">
-                      <Diamond className="w-10 h-10 text-primary drop-shadow-[0_0_12px_rgba(56,189,248,0.5)]" />
-                    </div>
+                    <BrandMark className="w-10 h-10 text-sky-300 drop-shadow-[0_0_12px_rgba(56,189,248,0.5)]" />
                   </motion.div>
-                  {/* Colorful orbiting dots */}
-                  {[
-                    { color: '#38bdf8', delay: 0 },
-                    { color: '#2dd4bf', delay: 0.4 },
-                    { color: '#fbbf24', delay: 0.8 },
-                    { color: '#fb7185', delay: 1.2 },
-                    { color: '#e879f9', delay: 1.6 },
-                  ].map((dot, i) => (
-                    <motion.div
-                      key={i}
-                      className="absolute rounded-full"
-                      style={{
-                        width: [6, 5, 7, 4, 8][i],
-                        height: [6, 5, 7, 4, 8][i],
-                        backgroundColor: dot.color,
-                        top: '50%',
-                        left: '50%',
-                        marginTop: -[3, 2.5, 3.5, 2, 4][i],
-                        marginLeft: -[3, 2.5, 3.5, 2, 4][i],
-                        boxShadow: `0 0 12px ${dot.color}60`,
-                      }}
-                      animate={{
-                        x: [0, 70 * Math.cos((i * 72 * Math.PI) / 180), 0],
-                        y: [0, 70 * Math.sin((i * 72 * Math.PI) / 180), 0],
-                        opacity: [0, 0.7, 0],
-                      }}
-                      transition={{
-                        duration: 3.5,
-                        repeat: Infinity,
-                        delay: dot.delay,
-                        ease: "easeInOut",
-                      }}
-                    />
-                  ))}
                 </div>
                 <div className="text-center space-y-5">
                   <h3 className="text-4xl font-bold text-white tracking-tight">
-                    <span className="text-gradient-shimmer">Crafting Your Journey</span>
+                    <span className="accent-label">Crafting Your Journey</span>
                   </h3>
                   <div className="flex gap-2 justify-center">
                     {[0, 1, 2].map(i => (
@@ -996,7 +1007,7 @@ function App() {
                         key={i}
                         animate={{ scale: [1, 1.6, 1], opacity: [0.3, 1, 0.3] }}
                         transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.3 }}
-                        className={`w-2 h-2 rounded-full ${i === 0 ? 'bg-primary' : i === 1 ? 'bg-teal' : 'bg-amber'} shadow-[0_0_8px_rgba(56,189,248,0.5)]`}
+                        className={`w-2 h-2 rounded-full ${i === 0 ? 'bg-sky-400' : i === 1 ? 'bg-sky-400' : 'bg-sky-400'} shadow-[0_0_8px_rgba(56,189,248,0.5)]`}
                       ></motion.div>
                     ))}
                   </div>
@@ -1004,13 +1015,13 @@ function App() {
                     <motion.span 
                       animate={{ width: ['0%', '100%', '0%'] }}
                       transition={{ duration: 2, repeat: Infinity }}
-                      className="h-[1px] bg-gradient-to-r from-primary via-teal to-amber max-w-[100px]"
+                      className="h-[1px] bg-gradient-to-r from-sky-400 via-sky-400 to-sky-400 max-w-[100px]"
                     />
                     <span className="text-slate-500 font-medium italic">Our travel architects are researching routes for {destination}...</span>
                     <motion.span 
                       animate={{ width: ['0%', '100%', '0%'] }}
                       transition={{ duration: 2, repeat: Infinity, delay: 1 }}
-                      className="h-[1px] bg-gradient-to-r from-amber via-teal to-primary max-w-[100px]"
+                      className="h-[1px] bg-gradient-to-r from-sky-400 via-sky-400 to-sky-400 max-w-[100px]"
                     />
                   </div>
                 </div>
@@ -1027,15 +1038,15 @@ function App() {
                   <div className="xl:col-span-3 space-y-16">
                     {/* Hero Header */}
                     <div className="pb-16 border-b border-white/10 relative">
-                      <div className="absolute -top-10 -left-10 w-40 h-40 bg-primary/5 blur-3xl rounded-full"></div>
+                      <div className="absolute -top-10 -left-10 w-40 h-40 bg-sky-400/5 blur-3xl rounded-full"></div>
                       <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.2 }}
                       >
-                        <div className="flex items-center gap-3 text-primary font-bold text-xs tracking-[0.4em] uppercase mb-6">
-                          <div className="w-6 h-[1px] bg-primary/50"></div>
-                          <Diamond className="w-3.5 h-3.5 text-primary" />
+                        <div className="flex items-center gap-3 text-sky-300 font-bold text-xs tracking-[0.4em] uppercase mb-6">
+                          <div className="w-6 h-[1px] bg-sky-400/50"></div>
+                          <BrandMark className="w-3.5 h-3.5 text-sky-300" />
                           Confirmed Itinerary
                         </div>
                         <h2 className="text-6xl md:text-7xl font-bold tracking-tighter mb-6 text-white leading-[1.05]">
@@ -1045,31 +1056,31 @@ function App() {
                           {itinerary.overview}
                         </p>
                         <div className="flex flex-wrap gap-4 stagger-fade-in">
-                          <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl px-6 py-4 flex items-center gap-4 transition-all duration-300 hover:bg-white/[0.07] hover:border-emerald-500/30 hover:shadow-[0_4px_25px_rgba(52,211,153,0.12)] group/stat">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-500/5 flex items-center justify-center group-hover/stat:from-emerald-500/30 group-hover/stat:to-emerald-500/10 transition-all duration-300 border border-emerald-500/20">
-                              <Tree className="w-5 h-5 text-emerald-400 group-hover/stat:scale-110 transition-transform duration-300" />
+                          <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl px-6 py-4 flex items-center gap-4 transition-all duration-300 hover:bg-white/[0.07] hover:border-white/30 hover:shadow-[0_4px_25px_rgba(56,189,248,0.12)] group/stat">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-500/20 to-slate-500/5 flex items-center justify-center group-hover/stat:from-slate-500/30 group-hover/stat:to-slate-500/10 transition-all duration-300 border border-white/20">
+                              <Tree className="w-5 h-5 text-slate-300 group-hover/stat:scale-110 transition-transform duration-300" />
                             </div>
                             <div>
                               <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Sustainability</div>
-                              <div className="text-sm font-bold text-white group-hover/stat:text-emerald-400 transition-colors duration-300">Level {itinerary.sustainability_score}%</div>
+                              <div className="text-sm font-bold text-white group-hover/stat:text-slate-300 transition-colors duration-300">Level {itinerary.sustainability_score}%</div>
                             </div>
                           </div>
-                          <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl px-6 py-4 flex items-center gap-4 transition-all duration-300 hover:bg-white/[0.07] hover:border-primary/30 hover:shadow-[0_4px_25px_rgba(56,189,248,0.12)] group/stat">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center group-hover/stat:from-primary/30 group-hover/stat:to-primary/10 transition-all duration-300 border border-primary/20">
-                              <Zap className="w-5 h-5 text-primary group-hover/stat:scale-110 transition-transform duration-300" />
+                          <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl px-6 py-4 flex items-center gap-4 transition-all duration-300 hover:bg-white/[0.07] hover:border-sky-400/30 hover:shadow-[0_4px_25px_rgba(56,189,248,0.12)] group/stat">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-400/20 to-sky-400/5 flex items-center justify-center group-hover/stat:from-sky-400/30 group-hover/stat:to-sky-400/10 transition-all duration-300 border border-sky-400/20">
+                              <Zap className="w-5 h-5 text-sky-300 group-hover/stat:scale-110 transition-transform duration-300" />
                             </div>
                             <div>
                               <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Budget Class</div>
-                              <div className="text-sm font-bold text-white group-hover/stat:text-primary transition-colors duration-300">{itinerary.price_range}</div>
+                              <div className="text-sm font-bold text-white group-hover/stat:text-sky-300 transition-colors duration-300">{itinerary.price_range}</div>
                             </div>
                           </div>
-                          <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl px-6 py-4 flex items-center gap-4 transition-all duration-300 hover:bg-white/[0.07] hover:border-amber-500/30 hover:shadow-[0_4px_25px_rgba(245,158,11,0.12)] group/stat">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-amber-500/5 flex items-center justify-center group-hover/stat:from-amber-500/30 group-hover/stat:to-amber-500/10 transition-all duration-300 border border-amber-500/20">
-                              <Calendar className="w-5 h-5 text-amber-400 group-hover/stat:scale-110 transition-transform duration-300" />
+                          <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl px-6 py-4 flex items-center gap-4 transition-all duration-300 hover:bg-white/[0.07] hover:border-sky-400/30 hover:shadow-[0_4px_25px_rgba(56,189,248,0.12)] group/stat">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-400/20 to-sky-400/5 flex items-center justify-center group-hover/stat:from-sky-400/30 group-hover/stat:to-sky-400/10 transition-all duration-300 border border-sky-400/20">
+                              <Calendar className="w-5 h-5 text-sky-300 group-hover/stat:scale-110 transition-transform duration-300" />
                             </div>
                             <div>
                               <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Duration</div>
-                              <div className="text-sm font-bold text-white group-hover/stat:text-amber-400 transition-colors duration-300">{itinerary.days?.length} Premium Days</div>
+                              <div className="text-sm font-bold text-white group-hover/stat:text-sky-300 transition-colors duration-300">{itinerary.days?.length} Premium Days</div>
                             </div>
                           </div>
                         </div>
@@ -1082,7 +1093,7 @@ function App() {
                           </button>
                           <button
                             onClick={handleExportICS}
-                            className="bg-primary/20 border border-primary/30 px-5 py-2.5 rounded-xl text-xs font-bold tracking-widest hover:bg-primary/30 flex items-center gap-2"
+                            className="bg-sky-400/20 border border-sky-400/30 px-5 py-2.5 rounded-xl text-xs font-bold tracking-widest hover:bg-sky-400/30 flex items-center gap-2"
                           >
                             <Calendar className="w-4 h-4" /> ADD TO CALENDAR
                           </button>
@@ -1107,29 +1118,29 @@ function App() {
 
                     {/* Concierge Quote - Premium Block */}
                     <div className="relative group/concierge">
-                      <div className="absolute -inset-4 bg-gradient-to-r from-primary/15 via-teal/10 to-amber/10 blur-3xl opacity-30 group-hover/concierge:opacity-60 transition-opacity duration-700 rounded-3xl"></div>
-                      <div className="glass-card-premium p-12 md:p-14 relative z-10">
+                      <div className="absolute -inset-4 bg-gradient-to-r from-sky-400/15 via-sky-400/10 to-sky-400/10 blur-3xl opacity-30 group-hover/concierge:opacity-60 transition-opacity duration-700 rounded-3xl"></div>
+                      <div className="flat-card p-12 md:p-14 relative z-10">
                         <div className="absolute top-0 right-0 p-8 opacity-[0.03]">
                           <Award className="w-40 h-40" />
                         </div>
                         <div className="flex items-start gap-8 relative z-10">
                           <div className="hidden lg:block">
-                            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary via-teal to-amber p-[2px] shadow-[0_0_30px_rgba(56,189,248,0.2)] group-hover/concierge:shadow-[0_0_50px_rgba(56,189,248,0.3)] transition-shadow duration-500" style={{backgroundSize: '200% 200%'}}>
+                            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-sky-400 via-sky-400 to-sky-400 p-[2px] shadow-[0_0_30px_rgba(56,189,248,0.2)] group-hover/concierge:shadow-[0_0_50px_rgba(56,189,248,0.3)] transition-shadow duration-500" style={{backgroundSize: '200% 200%'}}>
                               <div className="w-full h-full rounded-full bg-[#0c0e12] flex items-center justify-center">
-                                <Award className="w-7 h-7 text-primary" />
+                                <Award className="w-7 h-7 text-sky-300" />
                               </div>
                             </div>
                           </div>
                           <div className="flex-1">
-                            <div className="text-[10px] font-bold text-primary uppercase tracking-[0.3em] mb-6 flex items-center gap-3">
-                              <div className="w-8 h-[1px] bg-gradient-to-r from-primary to-teal"></div>
-                              <span className="text-gradient-teal">Executive Director of Concierge</span>
+                            <div className="text-[10px] font-bold text-sky-300 uppercase tracking-[0.3em] mb-6 flex items-center gap-3">
+                              <div className="w-8 h-[1px] bg-gradient-to-r from-sky-400 to-sky-400"></div>
+                              <span className="accent-label">Executive Director of Concierge</span>
                             </div>
-                            <blockquote className="text-2xl md:text-3xl font-light text-slate-200 leading-[1.7] italic serif">
+                            <blockquote className="text-2xl md:text-3xl font-light text-slate-200 leading-[1.7] italic quote-style">
                               "{itinerary.concierge_note}"
                             </blockquote>
-                            <div className="mt-8 flex items-center gap-2 text-primary/40 text-[10px] uppercase tracking-[0.2em] font-bold">
-                              <div className="w-4 h-[1px] bg-gradient-to-r from-primary to-amber"></div>
+                            <div className="mt-8 flex items-center gap-2 text-sky-300 text-[10px] uppercase tracking-[0.2em] font-bold">
+                              <div className="w-4 h-[1px] bg-gradient-to-r from-sky-400 to-sky-400"></div>
                               Personal Concierge Curation
                             </div>
                           </div>
@@ -1150,12 +1161,12 @@ function App() {
                               : 'bg-white/[0.03] border-white/5 text-slate-500 hover:border-white/10 hover:bg-white/[0.06] hover:text-slate-300'
                               }`}
                           >
-                            <span className={`text-[10px] font-bold uppercase tracking-widest transition-all duration-300 ${activeTab === idx ? 'text-primary/70' : 'opacity-50'}`}>Day</span>
+                            <span className={`text-[10px] font-bold uppercase tracking-widest transition-all duration-300 ${activeTab === idx ? 'text-sky-300' : 'opacity-50'}`}>Day</span>
                             <span className="text-base font-bold">{day.day_number}</span>
                             {activeTab === idx && (
                               <motion.div
                                 layoutId="tab-indicator"
-                                className="w-6 h-0.5 rounded-full bg-primary mt-0.5"
+                                className="w-6 h-0.5 rounded-full bg-sky-400 mt-0.5"
                               />
                             )}
                           </button>
@@ -1173,8 +1184,8 @@ function App() {
                         >
                           <div className="flex items-end justify-between border-b border-white/[0.06] pb-10">
                             <div>
-                              <div className="text-xs font-bold text-primary uppercase tracking-[0.3em] mb-4 flex items-center gap-3">
-                                <div className="w-6 h-[1px] bg-primary/40"></div>
+                              <div className="text-xs font-bold text-sky-300 uppercase tracking-[0.3em] mb-4 flex items-center gap-3">
+                                <div className="w-6 h-[1px] bg-sky-400/40"></div>
                                 Daily Focus
                               </div>
                               <h3 className="text-4xl md:text-5xl font-bold text-white mb-3 leading-tight">{itinerary.days[activeTab]?.theme}</h3>
@@ -1186,14 +1197,14 @@ function App() {
                                   <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Tempo</div>
                                   <div className="text-sm font-bold text-white">Curated Fluidity</div>
                                 </div>
-                                <Activity className="w-5 h-5 text-primary" />
+                                <Activity className="w-5 h-5 text-sky-300" />
                               </div>
                             </div>
                           </div>
 
                           <div className="space-y-16 relative">
                             {/* Elegant Timeline Connector */}
-                            <div className="absolute left-[34px] top-10 bottom-10 w-[1px] bg-gradient-to-b from-primary via-primary/50 to-transparent"></div>
+                            <div className="absolute left-[34px] top-10 bottom-10 w-[1px] bg-gradient-to-b from-sky-400 via-sky-400/50 to-transparent"></div>
 
                             {itinerary.days[activeTab]?.activities.map((act, idx) => (
                               <motion.div
@@ -1205,24 +1216,32 @@ function App() {
                               >
                                 {/* Timeline Marker */}
                                 <div className="shrink-0 flex flex-col items-center">
-                                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#15181e] to-[#0c0e12] border border-white/10 flex items-center justify-center relative z-10 group-hover:border-primary/40 transition-all duration-500 timeline-dot">
-                                    <div className="w-3 h-3 rounded-full bg-primary shadow-[0_0_20px_#38bdf8] group-hover:shadow-[0_0_30px_#38bdf8] transition-shadow duration-500"></div>
+                                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#15181e] to-[#0c0e12] border border-white/10 flex items-center justify-center relative z-10 group-hover:border-sky-400/40 transition-all duration-500 timeline-dot">
+                                    <div className="w-3 h-3 rounded-full bg-sky-400 shadow-[0_0_20px_#38bdf8] group-hover:shadow-[0_0_30px_#38bdf8] transition-shadow duration-500"></div>
                                   </div>
-                                  <div className="mt-3 text-[11px] font-bold text-primary tracking-[0.15em] uppercase bg-primary/10 px-3 py-1 rounded-lg">{act.time}</div>
+                                  <div className="mt-3 text-[11px] font-bold text-sky-300 tracking-[0.15em] uppercase bg-sky-400/10 px-3 py-1 rounded-lg">{act.time}</div>
                                 </div>
 
                                 <div className="flex-1 space-y-6">
                                   <div className="space-y-3">
                                     <div className="flex items-start gap-3 flex-wrap">
-                                      <h4 className="text-2xl md:text-3xl font-bold text-white group-hover:text-primary transition-colors duration-500 leading-tight">{act.title}</h4>
-                                      <div className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-primary/15 to-primary/5 text-primary text-[10px] font-bold uppercase tracking-widest border border-primary/20 whitespace-nowrap">
+                                      <h4 className="text-2xl md:text-3xl font-bold text-white group-hover:text-sky-300 transition-colors duration-500 leading-tight">{act.title}</h4>
+                                      <div className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-sky-400/15 to-sky-400/5 text-sky-300 text-[10px] font-bold uppercase tracking-widest border border-sky-400/20 whitespace-nowrap">
                                         {act.tag}
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
-                                      <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                                      {act.location}
-                                    </div>
+                                    {/* The actual place the traveller will visit */}
+                                    {(act.place_name || act.location) && (
+                                      <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-sky-400/[0.08] border border-sky-400/25 text-sky-200 text-base font-bold tracking-tight">
+                                        <MapPin className="w-4 h-4 shrink-0" />
+                                        {act.place_name || act.location}
+                                      </div>
+                                    )}
+                                    {act.location && act.location !== act.place_name && (
+                                      <div className="text-slate-500 text-sm font-medium">
+                                        {act.location}
+                                      </div>
+                                    )}
                                   </div>
 
                                   <p className="text-lg md:text-xl text-slate-400 font-light leading-relaxed max-w-2xl">
@@ -1231,33 +1250,36 @@ function App() {
 
                                   <div className="flex gap-3 pt-1">
                                     <a
-                                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(act.map_query || act.location)}`}
+                                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(act.place_name ? `${act.place_name}, ${destination}` : (act.map_query || act.location))}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="bg-white/[0.05] hover:bg-gradient-to-r hover:from-primary/20 hover:to-teal/10 p-3 rounded-xl border border-white/[0.06] hover:border-primary/30 text-slate-300 transition-all duration-300 flex items-center gap-2 text-xs font-semibold group/btn"
+                                      className="bg-white/[0.05] hover:bg-gradient-to-r hover:from-sky-400/20 hover:to-sky-400/10 p-3 rounded-xl border border-white/[0.06] hover:border-sky-400/30 text-slate-300 transition-all duration-300 flex items-center gap-2 text-xs font-semibold group/btn"
                                     >
-                                      <Navigation className="w-4 h-4 text-primary group-hover/btn:scale-110 transition-transform duration-300" />
+                                      <Navigation className="w-4 h-4 text-sky-300 group-hover/btn:scale-110 transition-transform duration-300" />
                                       Navigate
                                     </a>
-                                    <button className="bg-white/[0.05] hover:bg-gradient-to-r hover:from-amber/20 hover:to-rose/10 p-3 rounded-xl border border-white/[0.06] hover:border-amber/30 text-slate-300 transition-all duration-300 flex items-center gap-2 text-xs font-semibold hover:text-amber-400 group/btn">
-                                      <Camera className="w-4 h-4 text-amber-400 group-hover/btn:scale-110 transition-transform duration-300" />
+                                    <button className="bg-white/[0.05] hover:bg-gradient-to-r hover:from-sky-400/20 hover:to-slate-500/10 p-3 rounded-xl border border-white/[0.06] hover:border-sky-400/30 text-slate-300 transition-all duration-300 flex items-center gap-2 text-xs font-semibold hover:text-sky-300 group/btn">
+                                      <Camera className="w-4 h-4 text-sky-300 group-hover/btn:scale-110 transition-transform duration-300" />
                                       Inspiration
                                     </button>
                                   </div>
                                   {/* Photos + Ratings + Reviews - Social Proof */}
-                                  <PlaceEnrichment query={act.map_query || act.title || act.location} />
+                                  <PlaceEnrichment
+                                    query={act.place_name ? `${act.place_name}, ${destination}` : (act.map_query || act.title || act.location)}
+                                    offset={activeTab * 3 + idx}
+                                  />
 
                                   {act.transport_to_next && (
-                                    <div className="glass-card-premium p-8 mt-10 relative overflow-hidden group/trans">
-                                      <div className="absolute top-0 right-0 w-40 h-40 bg-primary/[0.04] blur-3xl -mr-10 -mt-10 group-hover/trans:bg-primary/[0.08] transition-all duration-700"></div>
-                                      <div className="absolute bottom-0 left-0 w-40 h-40 bg-teal/[0.03] blur-3xl -ml-10 -mb-10 group-hover/trans:bg-teal/[0.06] transition-all duration-700"></div>
+                                    <div className="flat-card p-8 mt-10 relative overflow-hidden group/trans">
+                                      <div className="absolute top-0 right-0 w-40 h-40 bg-sky-400/[0.04] blur-3xl -mr-10 -mt-10 group-hover/trans:bg-sky-400/[0.08] transition-all duration-700"></div>
+                                      <div className="absolute bottom-0 left-0 w-40 h-40 bg-sky-400/[0.03] blur-3xl -ml-10 -mb-10 group-hover/trans:bg-sky-400/[0.06] transition-all duration-700"></div>
                                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 relative z-10">
                                         <div className="flex items-center gap-6">
-                                          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/20 via-teal/10 to-primary/5 flex items-center justify-center border border-primary/20 group-hover/trans:border-primary/30 transition-all duration-300 group-hover/trans:shadow-[0_0_25px_rgba(56,189,248,0.15)]">
-                                            {act.transport_to_next.mode.toLowerCase().includes('walk') ? <Navigation className="w-7 h-7 text-primary" /> : act.transport_to_next.mode.toLowerCase().includes('train') ? <Train className="w-7 h-7 text-primary" /> : <Bus className="w-7 h-7 text-primary" />}
+                                          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-400/20 via-sky-400/10 to-sky-400/5 flex items-center justify-center border border-sky-400/20 group-hover/trans:border-sky-400/30 transition-all duration-300 group-hover/trans:shadow-[0_0_25px_rgba(56,189,248,0.15)]">
+                                            {act.transport_to_next.mode.toLowerCase().includes('walk') ? <Navigation className="w-7 h-7 text-sky-300" /> : act.transport_to_next.mode.toLowerCase().includes('train') ? <Train className="w-7 h-7 text-sky-300" /> : <Bus className="w-7 h-7 text-sky-300" />}
                                           </div>
                                           <div>
-                                            <div className="text-[10px] font-bold text-primary uppercase tracking-[0.3em] mb-1.5">Transfer</div>
+                                            <div className="text-[10px] font-bold text-sky-300 uppercase tracking-[0.3em] mb-1.5">Transfer</div>
                                             <div className="font-bold text-white text-xl flex items-center gap-2">
                                               {act.transport_to_next.mode}
                                               <ArrowRight className="w-4 h-4 text-slate-600" />
@@ -1268,23 +1290,23 @@ function App() {
                                           <div>
                                             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Duration</div>
                                             <div className="font-bold text-white text-base flex items-center gap-2">
-                                              <Clock className="w-4 h-4 text-primary" />
+                                              <Clock className="w-4 h-4 text-sky-300" />
                                               {act.transport_to_next.duration}
                                             </div>
                                           </div>
                                           <div>
                                             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Cost</div>
                                             <div className="font-bold text-white text-base flex items-center gap-2">
-                                              <Wallet className="w-4 h-4 text-primary" />
+                                              <Wallet className="w-4 h-4 text-sky-300" />
                                               {act.transport_to_next.cost}
                                             </div>
                                           </div>
                                         </div>
                                       </div>
                                       <div className="mt-6 pt-6 border-t border-white/[0.05] text-slate-400 text-sm leading-relaxed italic flex items-start gap-3">
-                                        <span className="text-primary/30 text-lg leading-none">"</span>
+                                        <span className="text-sky-300 text-lg leading-none">"</span>
                                         <span>{act.transport_to_next.instructions}</span>
-                                        <span className="text-primary/30 text-lg leading-none self-end">"</span>
+                                        <span className="text-sky-300 text-lg leading-none self-end">"</span>
                                       </div>
                                     </div>
                                   )}
@@ -1299,30 +1321,30 @@ function App() {
 
                   {/* Right Column (1/4) - Insights & Intelligence */}
                   <div className="xl:col-span-1 space-y-10">
-                    {/* Climate Outlook - Premium Widget */}                          <div className="glass-card overflow-hidden group/climate relative">
-                      <div className="absolute top-0 right-0 w-40 h-40 bg-amber-400/10 blur-3xl -mr-12 -mt-12 group-hover/climate:bg-amber-400/20 transition-all duration-700"></div>
-                      <div className="absolute bottom-0 left-0 w-40 h-40 bg-rose-400/5 blur-3xl -ml-12 -mb-12"></div>
-                      <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-amber-400/30 via-rose-400/20 to-transparent"></div>
+                    {/* Climate Outlook - Premium Widget */}                          <div className="flat-card overflow-hidden group/climate relative">
+                      <div className="absolute top-0 right-0 w-40 h-40 bg-sky-400/10 blur-3xl -mr-12 -mt-12 group-hover/climate:bg-sky-400/20 transition-all duration-700"></div>
+                      <div className="absolute bottom-0 left-0 w-40 h-40 bg-slate-700/5 blur-3xl -ml-12 -mb-12"></div>
+                      <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-sky-400/30 via-slate-500/20 to-transparent"></div>
                       <div className="p-8">
                         <h3 className="text-xs font-bold text-white mb-6 flex items-center gap-3 tracking-[0.2em] uppercase">
-                          <div className="bg-gradient-to-br from-amber-400/20 to-amber-400/5 p-2 rounded-lg border border-amber-400/20">
-                            <Sun className="w-4 h-4 text-amber-400" />
+                          <div className="bg-gradient-to-br from-sky-400/20 to-sky-400/5 p-2 rounded-lg border border-sky-400/20">
+                            <Sun className="w-4 h-4 text-sky-300" />
                           </div>
-                          <span className="text-gradient-amber">Climate Outlook</span>
+                          <span className="accent-label">Climate Outlook</span>
                         </h3>
                         {weather ? (
                           <div className="space-y-6 relative z-10">
                             {/* Temperature Display */}
                             <div className="flex items-center gap-5">
                               <div className="text-5xl font-bold text-white tracking-tighter">
-                                <span className="bg-gradient-to-br from-amber-200 via-amber-400 to-rose-400 bg-clip-text text-transparent">
+                                <span className="bg-gradient-to-br from-sky-400 via-sky-400 to-slate-500 bg-clip-text text-transparent">
                                   {weather.temperature_c?.expected_high != null
                                     ? `${Math.round(weather.temperature_c.expected_high)}°C`
                                     : 'N/A'}
                                 </span>
                               </div>
-                              <div className="h-12 w-[1px] bg-gradient-to-b from-amber-400/30 to-rose-400/30"></div>
-                              <div className="text-[10px] font-bold text-white uppercase leading-relaxed tracking-wider">Peak Temp<br /><span className="text-gradient-amber">Expected</span></div>
+                              <div className="h-12 w-[1px] bg-gradient-to-b from-sky-400/30 to-slate-500/30"></div>
+                              <div className="text-[10px] font-bold text-white uppercase leading-relaxed tracking-wider">Peak Temp<br /><span className="accent-label">Expected</span></div>
                             </div>
                             {/* Temperature Range */}
                             {weather.temperature_c?.expected_low != null && weather.temperature_c?.expected_high != null && (
@@ -1337,8 +1359,8 @@ function App() {
                               </div>
                             )}
                             <div className="space-y-3">
-                              <div className="flex items-center gap-2.5 p-3.5 bg-white/[0.04] rounded-xl border border-white/[0.06] group-hover/climate:border-amber-400/30 transition-all duration-500 hover:bg-gradient-to-r hover:from-amber-400/10 hover:to-amber-400/5">
-                                <div className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_15px_#fbbf24] shrink-0 animate-pulse-soft"></div>
+                              <div className="flex items-center gap-2.5 p-3.5 bg-white/[0.04] rounded-xl border border-white/[0.06] group-hover/climate:border-sky-400/30 transition-all duration-500 hover:bg-gradient-to-r hover:from-sky-400/10 hover:to-sky-400/5">
+                                <div className="w-2 h-2 rounded-full bg-sky-400 shadow-[0_0_15px_#38bdf8] shrink-0 animate-pulse-soft"></div>
                                 <span className="text-xs font-semibold text-white uppercase tracking-wide">{weather.conditions_summary || 'Conditions data pending'}</span>
                               </div>
                               <p className="text-[11px] font-medium text-white/90 leading-relaxed italic px-1">
@@ -1348,10 +1370,10 @@ function App() {
                             {/* Best Times */}
                             {weather.best_times && weather.best_times.length > 0 && (
                               <div className="space-y-2">
-                                <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">Best Times</p>
+                                <p className="text-[10px] font-bold text-sky-300 uppercase tracking-widest">Best Times</p>
                                 <div className="flex flex-wrap gap-1.5">
                                   {weather.best_times.map((t: string, i: number) => (
-                                    <span key={i} className="text-[10px] font-medium text-white bg-amber-400/10 border border-amber-400/15 rounded-full px-2.5 py-1">{t}</span>
+                                    <span key={i} className="text-[10px] font-medium text-white bg-sky-400/10 border border-sky-400/15 rounded-full px-2.5 py-1">{t}</span>
                                   ))}
                                 </div>
                               </div>
@@ -1359,10 +1381,10 @@ function App() {
                             {/* Activity Suggestions */}
                             {weather.activity_suggestions && weather.activity_suggestions.length > 0 && (
                               <div className="space-y-2">
-                                <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">Activities</p>
+                                <p className="text-[10px] font-bold text-sky-300 uppercase tracking-widest">Activities</p>
                                 <div className="flex flex-wrap gap-1.5">
                                   {weather.activity_suggestions.map((a: string, i: number) => (
-                                    <span key={i} className="text-[10px] font-medium text-white bg-rose-400/10 border border-rose-400/15 rounded-full px-2.5 py-1">{a}</span>
+                                    <span key={i} className="text-[10px] font-medium text-white bg-slate-700/10 border border-white/15 rounded-full px-2.5 py-1">{a}</span>
                                   ))}
                                 </div>
                               </div>
@@ -1370,11 +1392,11 @@ function App() {
                             {/* Packing */}
                             {weather.packing && weather.packing.length > 0 && (
                               <div className="space-y-2">
-                                <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">Packing Tips</p>
+                                <p className="text-[10px] font-bold text-sky-300 uppercase tracking-widest">Packing Tips</p>
                                 <div className="space-y-1">
                                   {weather.packing.map((p: string, i: number) => (
                                     <div key={i} className="flex items-start gap-2">
-                                      <div className="w-1 h-1 rounded-full bg-amber-400 mt-1.5 shrink-0"></div>
+                                      <div className="w-1 h-1 rounded-full bg-sky-400 mt-1.5 shrink-0"></div>
                                       <span className="text-[10px] text-white leading-relaxed">{p}</span>
                                     </div>
                                   ))}
@@ -1384,28 +1406,28 @@ function App() {
                           </div>
                         ) : (
                           <div className="py-8 text-center space-y-3">
-                            <RefreshCcw className="w-7 h-7 text-amber-400/30 mx-auto animate-spin-slow" />
-                            <p className="text-amber-500/50 text-[10px] font-bold uppercase tracking-widest italic">Synching Intelligence...</p>
+                            <RefreshCcw className="w-7 h-7 text-sky-300 mx-auto animate-spin-slow" />
+                            <p className="text-sky-300 text-[10px] font-bold uppercase tracking-widest italic">Synching Intelligence...</p>
                           </div>
                         )}
                       </div>
                     </div>
 
                     {/* Local Expert - Soul Panel */}
-                    <div className="glass-card overflow-hidden group/soul relative">
-                      <div className="absolute inset-x-0 bottom-0 h-[1px] bg-gradient-to-r from-transparent via-fuchsia-400/30 via-primary/30 to-transparent"></div>
-                      <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-primary/30 via-fuchsia-400/20 to-transparent"></div>
-                      <div className="absolute top-0 right-0 w-40 h-40 bg-fuchsia-400/5 blur-3xl -mr-8 -mt-8 group-hover/soul:bg-fuchsia-400/10 transition-all duration-700"></div>
-                      <div className="absolute bottom-0 left-0 w-40 h-40 bg-primary/5 blur-3xl -ml-8 -mb-8"></div>
+                    <div className="flat-card overflow-hidden group/soul relative">
+                      <div className="absolute inset-x-0 bottom-0 h-[1px] bg-gradient-to-r from-transparent via-slate-500/30 via-sky-400/30 to-transparent"></div>
+                      <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-sky-400/30 via-slate-500/20 to-transparent"></div>
+                      <div className="absolute top-0 right-0 w-40 h-40 bg-slate-700/5 blur-3xl -mr-8 -mt-8 group-hover/soul:bg-slate-700/10 transition-all duration-700"></div>
+                      <div className="absolute bottom-0 left-0 w-40 h-40 bg-sky-400/5 blur-3xl -ml-8 -mb-8"></div>
                       <div className="p-8">
                         <h3 className="text-xs font-bold text-white mb-6 flex items-center gap-3 tracking-[0.2em] uppercase">
-                          <div className="bg-gradient-to-br from-fuchsia-400/20 to-primary/10 p-2 rounded-lg border border-fuchsia-400/20">
-                            <Award className="w-4 h-4 text-fuchsia-400" />
+                          <div className="bg-gradient-to-br from-slate-500/20 to-sky-400/10 p-2 rounded-lg border border-white/20">
+                            <Award className="w-4 h-4 text-slate-300" />
                           </div>
-                          <span className="bg-gradient-to-r from-fuchsia-400 to-primary bg-clip-text text-transparent">Local Soul Insight</span>
+                          <span className="bg-gradient-to-r from-slate-500 to-sky-400 bg-clip-text text-transparent">Local Soul Insight</span>
                         </h3>
                         <div className="relative z-10">
-                          <div className="text-5xl text-fuchsia-400/20 font-serif absolute -top-5 -left-2 italic leading-none select-none">"</div>
+                          <div className="text-5xl text-slate-300 font-normal italic absolute -top-5 -left-2 italic leading-none select-none">"</div>
                           <p className="text-slate-300 text-[13px] leading-[1.9] mb-8 font-light italic relative z-10 pl-2">
                             {localExpert ? (
                               typeof localExpert === 'string' 
@@ -1417,23 +1439,23 @@ function App() {
                           </p>
                           <button 
                             onClick={() => setIsIntelligenceOpen(true)}
-                            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-white/[0.04] to-white/[0.02] border border-white/[0.06] text-[11px] font-bold text-slate-400 flex items-center justify-center gap-2 hover:bg-gradient-to-r hover:from-fuchsia-400/15 hover:to-primary/10 hover:text-white hover:border-fuchsia-400/30 transition-all duration-300 uppercase tracking-[0.15em] group/btn cursor-pointer"
+                            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-white/[0.04] to-white/[0.02] border border-white/[0.06] text-[11px] font-bold text-slate-400 flex items-center justify-center gap-2 hover:bg-gradient-to-r hover:from-slate-500/15 hover:to-sky-400/10 hover:text-white hover:border-white/30 transition-all duration-300 uppercase tracking-[0.15em] group/btn cursor-pointer"
                           >
-                            EXPAND INTELLIGENCE <ChevronRight className="w-3 h-3 text-primary group-hover/btn:translate-x-0.5 transition-transform duration-300" />
+                            EXPAND INTELLIGENCE <ChevronRight className="w-3 h-3 text-sky-300 group-hover/btn:translate-x-0.5 transition-transform duration-300" />
                           </button>
                         </div>
                       </div>
                     </div>
 
                     {/* Mobility Strategy */}
-                    <div className="glass-card overflow-hidden group/mob border-white/5">
-                      <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-teal-400/30 via-emerald-400/20 to-transparent"></div>
+                    <div className="flat-card overflow-hidden group/mob border-white/5">
+                      <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-sky-400/30 via-slate-500/20 to-transparent"></div>
                       <div className="p-8 pb-2">
                         <h3 className="text-xs font-bold text-white mb-6 flex items-center gap-3 tracking-[0.2em] uppercase">
-                          <div className="bg-gradient-to-br from-teal-400/20 to-emerald-400/10 p-2 rounded-lg border border-teal-400/20">
-                            <Navigation className="w-4 h-4 text-teal-400" />
+                          <div className="bg-gradient-to-br from-sky-400/20 to-slate-500/10 p-2 rounded-lg border border-sky-400/20">
+                            <Navigation className="w-4 h-4 text-sky-300" />
                           </div>
-                          <span className="text-gradient-teal">Mobility Strategy</span>
+                          <span className="accent-label">Mobility Strategy</span>
                         </h3>
                       </div>
 
@@ -1451,14 +1473,14 @@ function App() {
                               className={`w-full flex items-center justify-between p-5 bg-[#0c0e12] transition-all duration-300 ${expandedMobility === item.id ? 'bg-[#15181e]' : 'hover:bg-[#15181e]'}`}
                             >
                               <div className="flex items-center gap-4">
-                                <div className={`p-2 rounded-lg transition-all duration-300 ${expandedMobility === item.id ? 'bg-primary/15 text-primary' : 'text-slate-500 group-hover/item:text-primary'}`}>
+                                <div className={`p-2 rounded-lg transition-all duration-300 ${expandedMobility === item.id ? 'bg-sky-400/15 text-sky-300' : 'text-slate-500 group-hover/item:text-sky-300'}`}>
                                   {item.icon}
                                 </div>
                                 <span className={`text-xs font-semibold tracking-wide transition-all duration-300 ${expandedMobility === item.id ? 'text-white' : 'text-slate-400 group-hover/item:text-slate-200'}`}>
                                   {item.label}
                                 </span>
                               </div>
-                              <ChevronRight className={`w-4 h-4 transition-all duration-300 ${expandedMobility === item.id ? 'rotate-90 text-primary' : 'text-slate-600 group-hover/item:text-primary group-hover/item:translate-x-0.5'}`} />
+                              <ChevronRight className={`w-4 h-4 transition-all duration-300 ${expandedMobility === item.id ? 'rotate-90 text-sky-300' : 'text-slate-600 group-hover/item:text-sky-300 group-hover/item:translate-x-0.5'}`} />
                             </button>
                             <AnimatePresence>
                               {expandedMobility === item.id && (
@@ -1477,15 +1499,15 @@ function App() {
                                           <div className="space-y-4">
                                             {item.data.comparison_tips && (
                                               <div className="space-y-1.5">
-                                                <div className="text-primary font-bold uppercase tracking-widest text-[9px] mb-2">Comparison Strategy</div>
-                                                {item.data.comparison_tips.map((t: string, i: number) => <div key={i} className="flex gap-2 text-slate-500"><span className="text-primary">•</span> {t}</div>)}
+                                                <div className="text-sky-300 font-bold uppercase tracking-widest text-[9px] mb-2">Comparison Strategy</div>
+                                                {item.data.comparison_tips.map((t: string, i: number) => <div key={i} className="flex gap-2 text-slate-500"><span className="text-sky-300">•</span> {t}</div>)}
                                               </div>
                                             )}
                                             {item.data.options && (
                                               <div className="space-y-3">
-                                                <div className="text-primary font-bold uppercase tracking-widest text-[9px]">Validated Providers</div>
+                                                <div className="text-sky-300 font-bold uppercase tracking-widest text-[9px]">Validated Providers</div>
                                                 {item.data.options.slice(0, 3).map((o: any, i: number) => (
-                                                  <div key={i} className="p-3 bg-white/[0.03] rounded-xl border border-white/5 hover:border-primary/20 transition-all duration-300">
+                                                  <div key={i} className="p-3 bg-white/[0.03] rounded-xl border border-white/5 hover:border-sky-400/20 transition-all duration-300">
                                                     <div className="font-bold text-white mb-1 text-xs">{o.company || o.mode}</div>
                                                     <div className="text-slate-500 text-[10px] leading-relaxed">{o.pros_cons || o.why || 'No additional details'}</div>
                                                   </div>
@@ -1513,20 +1535,45 @@ function App() {
                       {/* Final Routing Strategy */}
                       <div className="p-8 pt-4 pb-8 space-y-5">
                         <div className="flex flex-col gap-4">
-                          <div className="p-5 bg-gradient-to-br from-teal/10 via-emerald/5 to-teal/5 rounded-2xl border border-teal-400/20 hover:border-teal-400/30 hover:from-teal/15 hover:via-emerald/10 transition-all duration-300 group/logic">
+                          <div className="p-5 bg-gradient-to-br from-sky-400/10 via-slate-500/5 to-sky-400/5 rounded-2xl border border-sky-400/20 hover:border-sky-400/30 hover:from-sky-400/15 hover:via-slate-500/10 transition-all duration-300 group/logic">
                             <div className="flex items-center gap-2 mb-3">
-                              <div className="w-5 h-5 rounded-lg bg-gradient-to-br from-teal-400/30 to-emerald-400/20 flex items-center justify-center">
-                                <Zap className="w-3 h-3 text-teal-400" />
+                              <div className="w-5 h-5 rounded-lg bg-gradient-to-br from-sky-400/30 to-slate-500/20 flex items-center justify-center">
+                                <Zap className="w-3 h-3 text-sky-300" />
                               </div>
-                              <span className="text-[10px] font-bold text-teal-400/80 uppercase tracking-widest">Coordinated Logic</span>
+                              <span className="text-[10px] font-bold text-sky-300 uppercase tracking-widest">Coordinated Logic</span>
                             </div>
                             <p className="text-[11px] text-slate-400 leading-relaxed font-light italic">
                               {mobility?.route_optimization?.strategy || "Our agents have calculated the most efficient grouping of destinations to minimize transit fatigue."}
                             </p>
                           </div>
-                          <button className="w-full bg-gradient-to-r from-teal/[0.08] via-emerald/[0.05] to-teal/[0.03] hover:from-teal/[0.15] hover:via-emerald/[0.1] hover:to-teal/[0.08] text-teal-400 py-3.5 rounded-xl text-[10px] font-bold tracking-[0.2em] uppercase transition-all duration-300 flex items-center justify-center gap-2.5 border border-teal-400/20 hover:border-teal-400/40 group/btn">
-                            <Navigation className="w-4 h-4 group-hover/btn:scale-110 transition-transform duration-300 text-teal-400" />
-                            <span className="text-gradient-teal">ACCESS LIVE PLOT</span>
+                          {livePlot && (
+                            <div className="p-4 bg-white/[0.03] rounded-2xl border border-white/5">
+                              <div className="text-sky-300 font-bold uppercase tracking-widest text-[9px] mb-2.5">
+                                Route Stops{livePlot.source === 'itinerary' ? ' · Day ' + (itinerary?.days[activeTab]?.day_number ?? activeTab + 1) : ''}
+                              </div>
+                              <ol className="space-y-1.5">
+                                {livePlot.stops.map((stop, i) => (
+                                  <li key={i} className="flex items-start gap-2.5 text-[10px] text-slate-400">
+                                    <span className="shrink-0 w-4 h-4 rounded-full bg-sky-400/15 border border-sky-400/30 text-sky-300 text-[8px] font-bold flex items-center justify-center mt-[1px]">
+                                      {i + 1}
+                                    </span>
+                                    <span className="leading-relaxed">{stop}</span>
+                                  </li>
+                                ))}
+                              </ol>
+                            </div>
+                          )}
+                          <button
+                            onClick={() => livePlot && window.open(livePlot.url, '_blank', 'noopener,noreferrer')}
+                            disabled={!livePlot}
+                            title={livePlot ? 'Open the route in Google Maps' : 'No route data available yet'}
+                            className={`w-full py-3.5 rounded-xl text-[10px] font-bold tracking-[0.2em] uppercase transition-all duration-300 flex items-center justify-center gap-2.5 border ${livePlot
+                              ? 'bg-gradient-to-r from-sky-400/[0.08] via-slate-500/[0.05] to-sky-400/[0.03] hover:from-sky-400/[0.15] hover:via-slate-500/[0.1] hover:to-sky-400/[0.08] text-sky-300 border-sky-400/20 hover:border-sky-400/40 cursor-pointer group/btn'
+                              : 'bg-white/[0.02] text-slate-600 border-white/5 cursor-not-allowed'
+                            }`}
+                          >
+                            <Navigation className={`w-4 h-4 ${livePlot ? 'group-hover/btn:scale-110 transition-transform duration-300 text-sky-300' : 'text-slate-600'}`} />
+                            <span className={livePlot ? 'accent-label' : ''}>ACCESS LIVE PLOT</span>
                           </button>
                         </div>
                       </div>
@@ -1553,20 +1600,20 @@ function App() {
                   animate={{ scale: 1, y: 0, opacity: 1 }}
                   exit={{ scale: 0.94, y: 24, opacity: 0 }}
                   transition={{ type: 'spring', damping: 28, stiffness: 260 }}
-                  className="relative w-full max-w-4xl max-h-[85vh] overflow-y-auto glass-card-premium p-8 md:p-12 shadow-[0_0_80px_rgba(56,189,248,0.12)] flex flex-col gap-8 custom-scrollbar text-left"
+                  className="relative w-full max-w-4xl max-h-[85vh] overflow-y-auto flat-card p-8 md:p-12 shadow-[0_0_80px_rgba(56,189,248,0.12)] flex flex-col gap-8 custom-scrollbar text-left"
                 >
                   {/* Header */}
                   {/* Decorative header accent */}
-                  <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-primary/40 via-accent/40 to-primary/20"></div>
+                  <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-sky-400/40 via-sky-400/40 to-sky-400/20"></div>
                   
                   <div className="flex justify-between items-start gap-4">
                     <div>
-                      <span className="text-[10px] font-bold text-primary tracking-[0.3em] uppercase flex items-center gap-2">
-                        <Diamond className="w-3 h-3 text-primary" />
+                      <span className="text-[10px] font-bold text-sky-300 tracking-[0.3em] uppercase flex items-center gap-2">
+                        <BrandMark className="w-3 h-3 text-sky-300" />
                         Deep Intelligence Brief
                       </span>
                       <h2 className="text-2xl md:text-3xl font-extrabold text-white mt-2 tracking-tight">
-                        {destination || "Destination"} <span className="text-gradient-primary">Living Identity</span>
+                        {destination || "Destination"} <span className="accent-label">Living Identity</span>
                       </h2>
                     </div>
                     <button 
@@ -1578,7 +1625,7 @@ function App() {
                   </div>
 
                   {/* Content summary */}
-                  <p className="text-slate-300 text-sm md:text-base leading-relaxed italic border-l-2 border-primary/40 pl-5 py-2 bg-white/[0.02] rounded-r-xl">
+                  <p className="text-slate-300 text-sm md:text-base leading-relaxed italic border-l-2 border-sky-400/40 pl-5 py-2 bg-white/[0.02] rounded-r-xl">
                     "{localExpert?.summary || "Deep heritage insights pending synch."}"
                   </p>
 
@@ -1586,17 +1633,17 @@ function App() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     
                     {/* Contemporary Behaviors */}
-                    <div className="p-6 bg-[#0c0e12] border border-white/[0.06] rounded-2xl space-y-4 hover:border-primary/30 transition-all duration-300 group border-shimmer">
+                    <div className="p-6 bg-[#0c0e12] border border-white/[0.06] rounded-2xl space-y-4 hover:border-sky-400/30 transition-all duration-300 group card-edge">
                       <div className="flex items-center gap-3 mb-3">
-                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors duration-300">
-                          <span className="w-2 h-2 rounded-full bg-primary shadow-[0_0_10px_#38bdf8]"></span>
+                        <div className="w-8 h-8 rounded-lg bg-sky-400/10 flex items-center justify-center group-hover:bg-sky-400/20 transition-colors duration-300">
+                          <span className="w-2 h-2 rounded-full bg-sky-400 shadow-[0_0_10px_#38bdf8]"></span>
                         </div>
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">{localExpert?.contemporary_behaviors?.title || "Living Rhythms & Trends"}</h3>
                       </div>
                       <ul className="space-y-2.5">
                         {(localExpert?.contemporary_behaviors?.insights || []).map((ins: string, idx: number) => (
                           <li key={idx} className="text-xs font-medium text-slate-400 leading-relaxed flex items-start gap-2.5 bg-white/[0.02] p-2.5 rounded-lg">
-                            <span className="text-primary mt-0.5 shrink-0">•</span>
+                            <span className="text-sky-300 mt-0.5 shrink-0">•</span>
                             <span>{ins}</span>
                           </li>
                         ))}
@@ -1607,17 +1654,17 @@ function App() {
                     </div>
 
                     {/* Unwritten Customs */}
-                    <div className="p-6 bg-[#0c0e12] border border-white/[0.06] rounded-2xl space-y-4 hover:border-amber-400/30 transition-all duration-300 group border-shimmer">
+                    <div className="p-6 bg-[#0c0e12] border border-white/[0.06] rounded-2xl space-y-4 hover:border-sky-400/30 transition-all duration-300 group card-edge">
                       <div className="flex items-center gap-3 mb-3">
-                        <div className="w-8 h-8 rounded-lg bg-amber-400/10 flex items-center justify-center group-hover:bg-amber-400/20 transition-colors duration-300">
-                          <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_10px_#fbbf24]"></span>
+                        <div className="w-8 h-8 rounded-lg bg-sky-400/10 flex items-center justify-center group-hover:bg-sky-400/20 transition-colors duration-300">
+                          <span className="w-2 h-2 rounded-full bg-sky-400 shadow-[0_0_10px_#38bdf8]"></span>
                         </div>
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">{localExpert?.unwritten_customs?.title || "Unwritten Social Codes"}</h3>
                       </div>
                       <ul className="space-y-2.5">
                         {(localExpert?.unwritten_customs?.insights || []).map((ins: string, idx: number) => (
                           <li key={idx} className="text-xs font-medium text-slate-400 leading-relaxed flex items-start gap-2.5 bg-white/[0.02] p-2.5 rounded-lg">
-                            <span className="text-amber-400 mt-0.5 shrink-0">•</span>
+                            <span className="text-sky-300 mt-0.5 shrink-0">•</span>
                             <span>{ins}</span>
                           </li>
                         ))}
@@ -1628,17 +1675,17 @@ function App() {
                     </div>
 
                     {/* Folklore & Hidden Heritage */}
-                    <div className="p-6 bg-[#0c0e12] border border-white/[0.06] rounded-2xl space-y-4 hover:border-emerald-400/30 transition-all duration-300 group border-shimmer">
+                    <div className="p-6 bg-[#0c0e12] border border-white/[0.06] rounded-2xl space-y-4 hover:border-white/30 transition-all duration-300 group card-edge">
                       <div className="flex items-center gap-3 mb-3">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-400/10 flex items-center justify-center group-hover:bg-emerald-400/20 transition-colors duration-300">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_10px_#34d399]"></span>
+                        <div className="w-8 h-8 rounded-lg bg-slate-600/10 flex items-center justify-center group-hover:bg-slate-600/20 transition-colors duration-300">
+                          <span className="w-2 h-2 rounded-full bg-slate-600 shadow-[0_0_10px_#38bdf8]"></span>
                         </div>
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">{localExpert?.folklore_heritage?.title || "Folklore & Hidden Heritage"}</h3>
                       </div>
                       <ul className="space-y-2.5">
                         {(localExpert?.folklore_heritage?.insights || []).map((ins: string, idx: number) => (
                           <li key={idx} className="text-xs font-medium text-slate-400 leading-relaxed flex items-start gap-2.5 bg-white/[0.02] p-2.5 rounded-lg">
-                            <span className="text-emerald-400 mt-0.5 shrink-0">•</span>
+                            <span className="text-slate-300 mt-0.5 shrink-0">•</span>
                             <span>{ins}</span>
                           </li>
                         ))}
@@ -1649,17 +1696,17 @@ function App() {
                     </div>
 
                     {/* Guidebook vs Reality */}
-                    <div className="p-6 bg-[#0c0e12] border border-white/[0.06] rounded-2xl space-y-4 hover:border-rose-400/30 transition-all duration-300 group border-shimmer">
+                    <div className="p-6 bg-[#0c0e12] border border-white/[0.06] rounded-2xl space-y-4 hover:border-white/30 transition-all duration-300 group card-edge">
                       <div className="flex items-center gap-3 mb-3">
-                        <div className="w-8 h-8 rounded-lg bg-rose-400/10 flex items-center justify-center group-hover:bg-rose-400/20 transition-colors duration-300">
-                          <span className="w-2 h-2 rounded-full bg-rose-400 shadow-[0_0_10px_#f87171]"></span>
+                        <div className="w-8 h-8 rounded-lg bg-slate-700/10 flex items-center justify-center group-hover:bg-slate-700/20 transition-colors duration-300">
+                          <span className="w-2 h-2 rounded-full bg-slate-700 shadow-[0_0_10px_#38bdf8]"></span>
                         </div>
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">{localExpert?.guidebook_vs_reality?.title || "Guidebook vs. Reality"}</h3>
                       </div>
                       <ul className="space-y-2.5">
                         {(localExpert?.guidebook_vs_reality?.insights || []).map((ins: string, idx: number) => (
                           <li key={idx} className="text-xs font-medium text-slate-400 leading-relaxed flex items-start gap-2.5 bg-white/[0.02] p-2.5 rounded-lg">
-                            <span className="text-rose-400 mt-0.5 shrink-0">•</span>
+                            <span className="text-slate-300 mt-0.5 shrink-0">•</span>
                             <span>{ins}</span>
                           </li>
                         ))}
@@ -1670,17 +1717,17 @@ function App() {
                     </div>
 
                     {/* Authenticity Signals */}
-                    <div className="p-6 bg-[#0c0e12] border border-white/[0.06] rounded-2xl space-y-4 hover:border-indigo-400/30 transition-all duration-300 group md:col-span-2 border-shimmer">
+                    <div className="p-6 bg-[#0c0e12] border border-white/[0.06] rounded-2xl space-y-4 hover:border-white/30 transition-all duration-300 group md:col-span-2 card-edge">
                       <div className="flex items-center gap-3 mb-3">
-                        <div className="w-8 h-8 rounded-lg bg-indigo-400/10 flex items-center justify-center group-hover:bg-indigo-400/20 transition-colors duration-300">
-                          <span className="w-2 h-2 rounded-full bg-indigo-400 shadow-[0_0_10px_#818cf8]"></span>
+                        <div className="w-8 h-8 rounded-lg bg-slate-700/10 flex items-center justify-center group-hover:bg-slate-700/20 transition-colors duration-300">
+                          <span className="w-2 h-2 rounded-full bg-slate-700 shadow-[0_0_10px_#38bdf8]"></span>
                         </div>
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">{localExpert?.authenticity_signals?.title || "Living Authenticity Signals"}</h3>
                       </div>
                       <ul className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                         {(localExpert?.authenticity_signals?.insights || []).map((ins: string, idx: number) => (
                           <li key={idx} className="text-xs font-medium text-slate-400 leading-relaxed flex items-start gap-2.5 bg-white/[0.02] p-2.5 rounded-lg">
-                            <span className="text-indigo-400 mt-0.5 shrink-0">•</span>
+                            <span className="text-slate-300 mt-0.5 shrink-0">•</span>
                             <span>{ins}</span>
                           </li>
                         ))}
@@ -1691,10 +1738,10 @@ function App() {
                     </div>
 
                     {/* Sensory Profile */}
-                    <div className="p-6 bg-[#0c0e12] border border-white/[0.06] rounded-2xl space-y-4 hover:border-fuchsia-400/30 transition-all duration-300 group md:col-span-2 border-shimmer">
+                    <div className="p-6 bg-[#0c0e12] border border-white/[0.06] rounded-2xl space-y-4 hover:border-white/30 transition-all duration-300 group md:col-span-2 card-edge">
                       <div className="flex items-center gap-3 mb-4">
-                        <div className="w-8 h-8 rounded-lg bg-fuchsia-400/10 flex items-center justify-center group-hover:bg-fuchsia-400/20 transition-colors duration-300">
-                          <span className="w-2 h-2 rounded-full bg-fuchsia-400 shadow-[0_0_10px_#e879f9]"></span>
+                        <div className="w-8 h-8 rounded-lg bg-slate-700/10 flex items-center justify-center group-hover:bg-slate-700/20 transition-colors duration-300">
+                          <span className="w-2 h-2 rounded-full bg-slate-700 shadow-[0_0_10px_#38bdf8]"></span>
                         </div>
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">{localExpert?.sensory_profile?.title || "Sensory Signature"}</h3>
                       </div>
@@ -1703,16 +1750,16 @@ function App() {
                         
                         {/* Sounds */}
                         <div className="space-y-3">
-                          <span className="text-[10px] font-bold text-fuchsia-400/80 uppercase tracking-widest flex items-center gap-2">
-                            <div className="w-3 h-3 rounded bg-fuchsia-400/20 flex items-center justify-center">
-                              <span className="w-1 h-1 rounded-full bg-fuchsia-400"></span>
+                          <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest flex items-center gap-2">
+                            <div className="w-3 h-3 rounded bg-slate-700/20 flex items-center justify-center">
+                              <span className="w-1 h-1 rounded-full bg-slate-700"></span>
                             </div>
                             Sounds
                           </span>
                           <ul className="space-y-1.5">
                             {(localExpert?.sensory_profile?.sounds || []).map((snd: string, idx: number) => (
                               <li key={idx} className="text-xs font-medium text-slate-400 leading-relaxed flex items-start gap-2 p-2 bg-white/[0.02] rounded-lg">
-                                <span className="text-fuchsia-400/50 mt-0.5">♫</span>
+                                <span className="text-slate-300 mt-0.5">♫</span>
                                 <span>{snd}</span>
                               </li>
                             ))}
@@ -1721,16 +1768,16 @@ function App() {
 
                         {/* Scents */}
                         <div className="space-y-3">
-                          <span className="text-[10px] font-bold text-fuchsia-400/80 uppercase tracking-widest flex items-center gap-2">
-                            <div className="w-3 h-3 rounded bg-fuchsia-400/20 flex items-center justify-center">
-                              <span className="w-1 h-1 rounded-full bg-fuchsia-400"></span>
+                          <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest flex items-center gap-2">
+                            <div className="w-3 h-3 rounded bg-slate-700/20 flex items-center justify-center">
+                              <span className="w-1 h-1 rounded-full bg-slate-700"></span>
                             </div>
                             Scents
                           </span>
                           <ul className="space-y-1.5">
                             {(localExpert?.sensory_profile?.scents || []).map((sct: string, idx: number) => (
                               <li key={idx} className="text-xs font-medium text-slate-400 leading-relaxed flex items-start gap-2 p-2 bg-white/[0.02] rounded-lg">
-                                <span className="text-fuchsia-400/50 mt-0.5">✦</span>
+                                <span className="text-slate-300 mt-0.5">✦</span>
                                 <span>{sct}</span>
                               </li>
                             ))}
@@ -1739,9 +1786,9 @@ function App() {
 
                         {/* Colors */}
                         <div className="space-y-3">
-                          <span className="text-[10px] font-bold text-fuchsia-400/80 uppercase tracking-widest flex items-center gap-2">
-                            <div className="w-3 h-3 rounded bg-fuchsia-400/20 flex items-center justify-center">
-                              <span className="w-1 h-1 rounded-full bg-fuchsia-400"></span>
+                          <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest flex items-center gap-2">
+                            <div className="w-3 h-3 rounded bg-slate-700/20 flex items-center justify-center">
+                              <span className="w-1 h-1 rounded-full bg-slate-700"></span>
                             </div>
                             Palette
                           </span>
@@ -1780,7 +1827,7 @@ function App() {
                 exit={{ opacity: 0, y: 100 }}
                 className="fixed bottom-10 left-1/2 -translate-x-1/2 w-full max-w-xl px-4 z-50 flex justify-center"
               >
-                <div className="bg-gradient-to-r from-red-500/90 to-rose-500/90 shadow-[0_20px_60px_-15px_rgba(239,68,68,0.4)] text-white px-8 py-5 rounded-2xl flex items-center gap-5 border border-white/10 backdrop-blur-xl">
+                <div className="bg-gradient-to-r from-red-500/90 to-slate-500/90 shadow-[0_20px_60px_-15px_rgba(239,68,68,0.4)] text-white px-8 py-5 rounded-2xl flex items-center gap-5 border border-white/10 backdrop-blur-xl">
                   <div className="bg-white/15 p-3 rounded-xl shrink-0">
                     <RefreshCcw className="w-5 h-5 animate-spin-slow" />
                   </div>
@@ -1797,69 +1844,6 @@ function App() {
           </AnimatePresence>
       </main>
       </>
-      ) : (
-      /* ===== Landing gate: hero + VIEW THE APPLICATION ===== */
-      <section className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 text-center">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-          className="relative mb-14"
-        >
-          <div className="absolute inset-0 bg-primary blur-[120px] opacity-25 animate-pulse-soft"></div>
-          <motion.div
-            animate={{ y: [0, -12, 0] }}
-            transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-            className="bg-gradient-to-br from-primary/15 via-primary/5 to-secondary/10 p-12 rounded-[3rem] border border-primary/20 shadow-2xl relative z-10 backdrop-blur-xl"
-          >
-            <div className="absolute inset-0 rounded-[3rem] bg-gradient-to-br from-primary/10 to-transparent opacity-50"></div>
-            <Diamond className="w-24 h-24 text-primary relative z-10 drop-shadow-[0_0_20px_rgba(56,189,248,0.4)]" />
-          </motion.div>
-        </motion.div>
-
-        <motion.h2
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
-          className="text-5xl md:text-7xl font-bold mb-6 text-white leading-tight tracking-tight"
-        >
-          Craft Your{' '}
-          <span className="text-gradient-rainbow italic">Bespoke</span>
-          {' '}Narrative
-        </motion.h2>
-
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
-          className="text-lg md:text-xl text-slate-400 mb-14 leading-relaxed font-light max-w-2xl"
-        >
-          Xplora transcends standard planning. We curate intelligent travel experiences
-          that resonate with your soul and define your legacy.
-        </motion.p>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.45, ease: [0.16, 1, 0.3, 1] }}
-        >
-          <button
-            onClick={() => setAppRevealed(true)}
-            className="group relative text-white font-bold py-4 px-10 rounded-2xl shadow-[0_5px_30px_rgba(56,189,248,0.35)] hover:shadow-[0_8px_50px_rgba(56,189,248,0.55)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 flex items-center gap-3 tracking-[0.12em] text-sm overflow-hidden"
-            style={{
-              background: 'linear-gradient(135deg, #38bdf8 0%, #0284c7 25%, #2dd4bf 65%, #0d9488 100%)',
-              backgroundSize: '200% 200%',
-              animation: 'gradient-shift 4s ease-in-out infinite',
-            }}
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 -skew-x-12 translate-x-[-100%] group-hover:translate-x-[100%] duration-1000"></div>
-            <Zap className="w-5 h-5 relative z-10" />
-            <span className="relative z-10">VIEW THE APPLICATION</span>
-            <ArrowRight className="w-5 h-5 relative z-10 group-hover:translate-x-1 transition-transform duration-300" />
-          </button>
-        </motion.div>
-      </section>
-      )}
     </div>
   );
 }

@@ -9,3 +9,6 @@ dist/
 .env*
 
 .vercel-tmp/
+
+# macOS
+.DS_Store

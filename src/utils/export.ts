@@ -252,10 +252,29 @@ const escapeICS = (value: string): string =>
 /** Formats a Date as YYYYMMDDTHHmmSSZ (UTC). */
 const formatICSDate = (date: Date): string => date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 
-/** Parses the free-text travel dates input; falls back to today when unparseable. */
+/**
+ * Parses the travel dates input into a start date.
+ * Handles native `Date` strings plus the calendar format
+ * "Dec 15, 2026 → Dec 22, 2026" (the start date wins); falls back to today.
+ */
 const parseTravelDates = (travelDates: string): Date => {
-  const parsed = travelDates ? new Date(travelDates) : new Date();
-  return isNaN(parsed.getTime()) ? new Date() : parsed;
+  if (travelDates) {
+    const parsed = new Date(travelDates);
+    if (!isNaN(parsed.getTime())) return parsed;
+
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const match = travelDates.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/);
+    if (match) {
+      const month = months.indexOf(match[1].slice(0, 3).toLowerCase());
+      const day = parseInt(match[2], 10);
+      const year = parseInt(match[3], 10);
+      if (month !== -1 && day >= 1 && day <= 31) {
+        // UTC keeps the exported day exact regardless of the viewer's timezone
+        return new Date(Date.UTC(year, month, day));
+      }
+    }
+  }
+  return new Date();
 };
 
 /** Parses "09:00 AM" / "3:00 PM" style times onto the base date; defaults to 09:00. */

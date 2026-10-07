@@ -442,18 +442,28 @@ async def get_trip_rating(destination: str = "", limit: int = 20):
 
 
 @app.get("/api/place-enrichment")
-async def place_enrichment(q: str, use_cache: bool = True):
+async def place_enrichment(q: str, offset: int = 0, use_cache: bool = True):
     if not q or not q.strip():
         raise HTTPException(status_code=400, detail="q required")
     q = q.strip()[:300]
-    # Check cache first
+    offset = max(0, min(int(offset or 0), 50))
+    # Check cache first. Rows are only trusted when they record which source
+    # produced them, which retires the older invented ratings/photos.
     if use_cache:
         cached = get_place_cache(q)
-        if cached and cached.get("rating") is not None:
-            return {**cached, "query": q, "cached": True}
+        cached_source = (cached.get("raw") or {}).get("source") if cached else None
+        if cached and cached_source and (cached.get("rating") is not None or cached.get("photos")):
+            from agents.tools.places_enrichment import _rotate
+            return {
+                **cached,
+                "query": q,
+                "source": cached_source,
+                "photos": _rotate(cached.get("photos") or [], offset),
+                "cached": True,
+            }
     try:
         from agents.tools.places_enrichment import enrich_place
-        data = enrich_place(q)
+        data = enrich_place(q, offset=offset)
         # Save to cache (best-effort)
         try:
             set_place_cache(q, data)

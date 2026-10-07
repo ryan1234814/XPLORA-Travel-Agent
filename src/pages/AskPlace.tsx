@@ -68,7 +68,7 @@ function renderMarkdown(md: string): string {
   escaped = escaped.replace(/\*(.+?)\*/g, '<em class="text-slate-300">$1</em>');
 
   // Inline code
-  escaped = escaped.replace(/`(.+?)`/g, '<code class="bg-white/10 text-teal-300 px-1.5 py-0.5 rounded text-sm">$1</code>');
+  escaped = escaped.replace(/`(.+?)`/g, '<code class="bg-white/10 text-sky-300 px-1.5 py-0.5 rounded text-sm">$1</code>');
 
   // Unordered list items
   escaped = escaped.replace(/^[•-] (.+)$/gm, '<li class="ml-4 text-slate-300">$1</li>');
@@ -207,8 +207,8 @@ export default function AskPlace() {
       {/* Header area with inputs */}
       <div className="shrink-0 px-6 md:px-8 pt-6 md:pt-8 pb-6 border-b border-white/5">
         <div className="flex items-center gap-3 mb-6">
-          <div className="bg-gradient-to-br from-primary/25 via-teal/15 to-secondary/20 p-2.5 rounded-xl border border-primary/10 shadow-[0_0_20px_rgba(56,189,248,0.15)]">
-            <Search className="w-5 h-5 text-primary drop-shadow-[0_0_8px_rgba(56,189,248,0.4)]" />
+          <div className="bg-gradient-to-br from-sky-400/25 via-sky-400/15 to-sky-400/20 p-2.5 rounded-xl border border-sky-400/10 shadow-[0_0_20px_rgba(56,189,248,0.15)]">
+            <Search className="w-5 h-5 text-sky-300 drop-shadow-[0_0_8px_rgba(56,189,248,0.4)]" />
           </div>
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight">Ask XPLORA</h2>
@@ -227,7 +227,7 @@ export default function AskPlace() {
             {/* Place input */}
             <div className="space-y-1">
               <div className="relative group input-glow rounded-xl">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-primary transition-colors duration-300" />
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-sky-300 transition-colors duration-300" />
                 <input
                   type="text"
                   value={place}
@@ -237,7 +237,7 @@ export default function AskPlace() {
                   }}
                   placeholder="e.g. Fushimi Inari, Kyoto"
                   maxLength={120}
-                  className={`w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-10 pr-4 text-sm focus:border-primary/50 focus:bg-primary/[0.06] focus:shadow-[0_0_20px_rgba(56,189,248,0.06)] transition-all duration-300 outline-none ${fieldErrors.place ? 'border-red-500/60 focus:border-red-500/80' : ''}`}
+                  className={`w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-10 pr-4 text-sm focus:border-sky-400/50 focus:bg-sky-400/[0.06] focus:shadow-[0_0_20px_rgba(56,189,248,0.06)] transition-all duration-300 outline-none ${fieldErrors.place ? 'border-red-500/60 focus:border-red-500/80' : ''}`}
                 />
               </div>
               {fieldErrors.place && <InlineError message={fieldErrors.place} />}
@@ -246,7 +246,7 @@ export default function AskPlace() {
             {/* Question input */}
             <div className="space-y-1">
               <div className="relative group input-glow rounded-xl">
-                <MessageSquare className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-primary transition-colors duration-300" />
+                <MessageSquare className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-sky-300 transition-colors duration-300" />
                 <input
                   type="text"
                   value={question}
@@ -256,7 +256,7 @@ export default function AskPlace() {
                   }}
                   placeholder="e.g. Best time to visit? Is it crowded?"
                   maxLength={500}
-                  className={`w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-10 pr-4 text-sm focus:border-primary/50 focus:bg-primary/[0.06] focus:shadow-[0_0_20px_rgba(56,189,248,0.06)] transition-all duration-300 outline-none ${fieldErrors.question ? 'border-red-500/60 focus:border-red-500/80' : ''}`}
+                  className={`w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-10 pr-4 text-sm focus:border-sky-400/50 focus:bg-sky-400/[0.06] focus:shadow-[0_0_20px_rgba(56,189,248,0.06)] transition-all duration-300 outline-none ${fieldErrors.question ? 'border-red-500/60 focus:border-red-500/80' : ''}`}
                 />
               </div>
               {fieldErrors.question && <InlineError message={fieldErrors.question} />}
@@ -268,7 +268,7 @@ export default function AskPlace() {
               type="submit"
               disabled={isLoading || !place.trim() || question.trim().length < 3}
               className="text-white font-bold py-3 px-6 rounded-xl shadow-[0_5px_25px_rgba(56,189,248,0.3)] hover:shadow-[0_8px_40px_rgba(56,189,248,0.5)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 disabled:opacity-50 disabled:translate-y-0 flex items-center justify-center gap-2 tracking-[0.12em] text-xs relative overflow-hidden group/btn"
-              style={{ background: 'linear-gradient(135deg, #38bdf8 0%, #0284c7 25%, #2dd4bf 65%, #0d9488 100%)' }}
+              style={{ background: 'linear-gradient(135deg, #38bdf8 0%, #0284c7 25%, #38bdf8 65%, #0284c7 100%)' }}
             >
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent opacity-0 group-hover/btn:opacity-100 transition-opacity duration-700 -skew-x-12 translate-x-[-100%] group-hover/btn:translate-x-[100%] duration-1000"></div>
               {isLoading ? (
@@ -316,7 +316,7 @@ export default function AskPlace() {
                   transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
                 />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <Search className="w-6 h-6 text-primary animate-pulse" />
+                  <Search className="w-6 h-6 text-sky-300 animate-pulse" />
                 </div>
               </div>
               <p className="text-slate-400 text-sm">Researching <span className="text-white font-medium">{place}</span>...</p>
@@ -324,12 +324,12 @@ export default function AskPlace() {
               <div className="mt-5 flex flex-col items-center gap-2">
                 {loadingSteps.map((step, i) => (
                   <div key={i} className={`flex items-center gap-2 text-xs transition-all duration-300 ${
-                    i < loadingStep ? 'text-primary opacity-60' :
+                    i < loadingStep ? 'text-sky-300 opacity-60' :
                     i === loadingStep ? 'text-white' : 'text-slate-600'
                   }`}>
                     <div className={`w-4 h-4 rounded-full border flex items-center justify-center text-[8px] shrink-0 transition-all duration-300 ${
-                      i < loadingStep ? 'border-primary/50 bg-primary/20 text-primary' :
-                      i === loadingStep ? 'border-primary bg-primary/10 text-primary animate-pulse' :
+                      i < loadingStep ? 'border-sky-400/50 bg-sky-400/20 text-sky-300' :
+                      i === loadingStep ? 'border-sky-400 bg-sky-400/10 text-sky-300 animate-pulse' :
                       'border-white/10 text-slate-600'
                     }`}>
                       {i < loadingStep ? '✓' : i + 1}
@@ -363,7 +363,7 @@ export default function AskPlace() {
             >
               {/* Left 2/3 — Answer */}
               <div className="xl:col-span-2 space-y-6">
-                <div className="glass-card-premium p-6">
+                <div className="flat-card p-6">
                   <div
                     className="prose prose-invert max-w-none text-sm leading-relaxed"
                     dangerouslySetInnerHTML={{ __html: renderMarkdown(result.answer_markdown) }}
@@ -372,21 +372,21 @@ export default function AskPlace() {
 
                 {/* Sources */}
                 {result.sources.length > 0 && (
-                  <div className="glass-card-premium p-5">
+                  <div className="flat-card p-5">
                     <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                      <Globe className="w-4 h-4 text-primary" />
+                      <Globe className="w-4 h-4 text-sky-300" />
                       Sources
                     </h3>
                     <div className="space-y-2">
                       {result.sources.map((src, i) => (
                         <div key={i} className="flex items-start gap-2 text-xs">
-                          <span className="text-primary font-mono shrink-0 mt-0.5">[{i + 1}]</span>
+                          <span className="text-sky-300 font-mono shrink-0 mt-0.5">[{i + 1}]</span>
                           {src.url ? (
                             <a
                               href={src.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-slate-300 hover:text-primary transition-colors line-clamp-1"
+                              className="text-slate-300 hover:text-sky-300 transition-colors line-clamp-1"
                             >
                               {src.title}
                               <ExternalLink className="w-3 h-3 inline ml-1 opacity-50" />
@@ -412,9 +412,9 @@ export default function AskPlace() {
                         <button
                           key={i}
                           onClick={() => handleSuggestionClick(s)}
-                          className="px-3 py-2 rounded-xl text-xs font-medium bg-white/5 border border-white/10 text-slate-300 hover:bg-primary/10 hover:border-primary/30 hover:text-white transition-all duration-300 flex items-center gap-1.5"
+                          className="px-3 py-2 rounded-xl text-xs font-medium bg-white/5 border border-white/10 text-slate-300 hover:bg-sky-400/10 hover:border-sky-400/30 hover:text-white transition-all duration-300 flex items-center gap-1.5"
                         >
-                          <ChevronRight className="w-3 h-3 text-primary" />
+                          <ChevronRight className="w-3 h-3 text-sky-300" />
                           {s}
                         </button>
                       ))}
@@ -431,13 +431,13 @@ export default function AskPlace() {
                       onChange={(e) => setFollowupInput(e.target.value)}
                       onKeyDown={handleFollowupKeyDown}
                       placeholder="Ask a follow-up question..."
-                      className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-4 pr-4 text-sm focus:border-primary/50 focus:bg-primary/[0.06] transition-all duration-300 outline-none"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-4 pr-4 text-sm focus:border-sky-400/50 focus:bg-sky-400/[0.06] transition-all duration-300 outline-none"
                     />
                   </div>
                   <button
                     type="submit"
                     disabled={!followupInput.trim() || followupInput.trim().length < 3}
-                    className="bg-gradient-to-r from-primary/80 to-teal/80 text-white font-bold py-3 px-5 rounded-xl hover:shadow-[0_5px_25px_rgba(56,189,248,0.3)] transition-all duration-300 disabled:opacity-50 text-xs flex items-center gap-1.5"
+                    className="bg-gradient-to-r from-sky-400/80 to-sky-400/80 text-white font-bold py-3 px-5 rounded-xl hover:shadow-[0_5px_25px_rgba(56,189,248,0.3)] transition-all duration-300 disabled:opacity-50 text-xs flex items-center gap-1.5"
                   >
                     <ArrowRight className="w-4 h-4" />
                   </button>
@@ -447,9 +447,9 @@ export default function AskPlace() {
               {/* Right 1/3 — Location Card + Facts */}
               <div className="space-y-4">
                 {/* Location Card */}
-                <div className="glass-card-premium p-5 space-y-4">
+                <div className="flat-card p-5 space-y-4">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-primary" />
+                    <MapPin className="w-4 h-4 text-sky-300" />
                     Location Details
                   </h3>
 
@@ -461,7 +461,7 @@ export default function AskPlace() {
                       </span>
                       <button
                         onClick={copyCoords}
-                        className="text-slate-500 hover:text-primary transition-colors p-1"
+                        className="text-slate-500 hover:text-sky-300 transition-colors p-1"
                         title="Copy coordinates"
                       >
                         {copiedCoords ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -476,9 +476,9 @@ export default function AskPlace() {
                         href={result.location.google_maps_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 hover:bg-primary/10 hover:border-primary/30 hover:text-white transition-all duration-300"
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 hover:bg-sky-400/10 hover:border-sky-400/30 hover:text-white transition-all duration-300"
                       >
-                        <Globe className="w-3.5 h-3.5 text-primary" />
+                        <Globe className="w-3.5 h-3.5 text-sky-300" />
                         View on Google Maps
                         <ExternalLink className="w-3 h-3 ml-auto opacity-50" />
                       </a>
@@ -488,9 +488,9 @@ export default function AskPlace() {
                         href={result.location.directions_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 hover:bg-primary/10 hover:border-primary/30 hover:text-white transition-all duration-300"
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 hover:bg-sky-400/10 hover:border-sky-400/30 hover:text-white transition-all duration-300"
                       >
-                        <Navigation className="w-3.5 h-3.5 text-teal" />
+                        <Navigation className="w-3.5 h-3.5 text-sky-300" />
                         Get Directions
                         <ExternalLink className="w-3 h-3 ml-auto opacity-50" />
                       </a>
@@ -514,15 +514,15 @@ export default function AskPlace() {
 
                 {/* Facts */}
                 {result.facts.length > 0 && (
-                  <div className="glass-card-premium p-5 space-y-3">
+                  <div className="flat-card p-5 space-y-3">
                     <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-amber" />
+                      <Sparkles className="w-4 h-4 text-sky-300" />
                       Key Facts
                     </h3>
                     <div className="space-y-2">
                       {result.facts.map((fact, i) => (
                         <div key={i} className="flex items-start gap-2 text-xs">
-                          <span className="text-primary font-semibold shrink-0">{fact.label}:</span>
+                          <span className="text-sky-300 font-semibold shrink-0">{fact.label}:</span>
                           <span className="text-slate-300">{fact.value}</span>
                         </div>
                       ))}
@@ -541,8 +541,8 @@ export default function AskPlace() {
               animate={{ opacity: 1 }}
               className="flex flex-col items-center justify-center py-20 text-center"
             >
-              <div className="bg-gradient-to-br from-primary/15 via-primary/5 to-secondary/10 p-8 rounded-3xl border border-primary/10 mb-6">
-                <Search className="w-12 h-12 text-primary drop-shadow-[0_0_12px_rgba(56,189,248,0.3)]" />
+              <div className="bg-gradient-to-br from-sky-400/15 via-sky-400/5 to-sky-400/10 p-8 rounded-3xl border border-sky-400/10 mb-6">
+                <Search className="w-12 h-12 text-sky-300 drop-shadow-[0_0_12px_rgba(56,189,248,0.3)]" />
               </div>
               <h3 className="text-2xl font-bold text-white mb-2">Ask About Any Place</h3>
               <p className="text-slate-400 text-sm max-w-md">
