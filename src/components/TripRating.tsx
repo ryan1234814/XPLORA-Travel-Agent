@@ -21,7 +21,7 @@ export default function TripRating({ destination, origin, tripTitle }: Props) {
 
   const fetchStats = async () => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/api/trip-rating`, { params: { destination } });
+      const res = await axios.get(`${API_BASE_URL}/api/trip-rating`, { params: { destination }, timeout: 60000 });
       setStats(res.data.stats);
       setRecent(res.data.ratings || []);
     } catch {}
@@ -33,7 +33,7 @@ export default function TripRating({ destination, origin, tripTitle }: Props) {
     if (rating < 1) return;
     setSubmitting(true);
     try {
-      await axios.post(`${API_BASE_URL}/api/trip-rating`, { destination, rating, feedback, origin, trip_title: tripTitle });
+      await axios.post(`${API_BASE_URL}/api/trip-rating`, { destination, rating, feedback, origin, trip_title: tripTitle }, { timeout: 60000 });
       setSubmitted(true);
       setFeedback('');
       await fetchStats();

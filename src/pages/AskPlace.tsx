@@ -151,7 +151,7 @@ export default function AskPlace() {
         place: p,
         question: q,
         conversation_id: conversationId || undefined,
-      });
+      }, { timeout: 180000 });
 
       const data: AskPlaceResult = response.data;
       setResult(data);

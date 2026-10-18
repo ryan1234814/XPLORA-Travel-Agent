@@ -1,3 +1,5 @@
+import axios from 'axios';
+
 // Central resolution of the backend API base URL.
 //
 // In production this value is baked in at BUILD time from VITE_API_BASE_URL —
@@ -17,3 +19,12 @@ if (import.meta.env.PROD && !envUrl) {
 
 export const API_BASE_URL =
   envUrl || (import.meta.env.PROD ? '' : 'http://localhost:8000');
+
+// Fire-and-forget warm-up. Render's free tier sleeps after ~15 min idle and the
+// next request cold-starts in ~50-60s. Pinging the health endpoint on app load
+// overlaps that cold start with the user reading the page, instead of blocking
+// their first real action. Errors are ignored — this is best-effort only.
+export function warmBackend(): void {
+  if (!API_BASE_URL) return;
+  axios.get(`${API_BASE_URL}/`, { timeout: 120000 }).catch(() => {});
+}

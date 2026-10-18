@@ -30,7 +30,7 @@ export function PlaceEnrichment({ query, offset = 0 }: { query: string; offset?:
   useEffect(() => {
     if (!query) return;
     let cancelled = false;
-    axios.get(`${API_BASE_URL}/api/place-enrichment`, { params: { q: query, offset }, timeout: 12000 })
+    axios.get(`${API_BASE_URL}/api/place-enrichment`, { params: { q: query, offset }, timeout: 60000 })
       .then(res => { if (!cancelled) { setData(res.data); setLoadedKey(requestKey); } })
       // Unresolvable place: fall through to the guard below, which renders nothing
       // rather than invented imagery.

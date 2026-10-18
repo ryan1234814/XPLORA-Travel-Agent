@@ -5,6 +5,9 @@ import './index.css'
 import './App.css'
 import Landing from './pages/Landing'
 import App from './App.tsx'
+import { warmBackend } from './utils/apiBase'
+
+warmBackend()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

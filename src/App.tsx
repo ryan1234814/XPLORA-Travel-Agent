@@ -393,7 +393,7 @@ function App() {
           occasion: occasion,
           language_preference: languagePreference,
           risk_tolerance: riskTolerance
-        }, { timeout: 90000 });
+        }, { timeout: 180000 });
 
         data = response.data;
         console.log('[DEBUG] Full API response keys:', Object.keys(data));
