@@ -1,0 +1,33 @@
+name: Keep backend awake
+
+# Render's free tier sleeps after ~15 minutes of inactivity, so the next
+# request cold-starts in ~50-60s. Pinging the health endpoint every 10 minutes
+# keeps the service warm so real users never hit a cold start.
+#
+# The backend URL defaults to the current Render service. To point this at a
+# different deployment, set a repository Actions *variable* named BACKEND_URL
+# (Settings -> Secrets and variables -> Actions -> Variables).
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health endpoint
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL || 'https://xplora-backend-b3gn.onrender.com' }}
+        run: |
+          echo "Pinging $BACKEND_URL ..."
+          http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 "$BACKEND_URL/")
+          echo "HTTP $http_code"
+          # Treat any response as success: the goal is to wake the dyno, and a
+          # very slow cold start may still be warming up when curl returns.
+          if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 500 ]; then
+            echo "Backend is awake."
+          else
+            echo "Backend returned $http_code (may just be warming up)."
+          fi
