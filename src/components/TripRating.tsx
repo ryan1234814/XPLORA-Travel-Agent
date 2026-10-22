@@ -10,13 +10,19 @@ interface Props {
   tripTitle?: string;
 }
 
+interface RecentRating {
+  rating: number;
+  feedback?: string;
+  created_at: string;
+}
+
 export default function TripRating({ destination, origin, tripTitle }: Props) {
   const [rating, setRating] = useState(0);
   const [hover, setHover] = useState(0);
   const [feedback, setFeedback] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [stats, setStats] = useState<{ count: number; avg: number; distribution: Record<string, number> } | null>(null);
-  const [recent, setRecent] = useState<any[]>([]);
+  const [recent, setRecent] = useState<RecentRating[]>([]);
   const [submitted, setSubmitted] = useState(false);
 
   const fetchStats = async () => {
@@ -24,9 +30,12 @@ export default function TripRating({ destination, origin, tripTitle }: Props) {
       const res = await axios.get(`${API_BASE_URL}/api/trip-rating`, { params: { destination }, timeout: 60000 });
       setStats(res.data.stats);
       setRecent(res.data.ratings || []);
-    } catch {}
+    } catch { /* stats are best-effort; ignore fetch failures */ }
   };
 
+  // fetchStats closes over `destination`; re-running on destination change is
+  // the intended refetch, so we intentionally omit it from the deps array.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (destination) fetchStats(); }, [destination]);
 
   const submit = async () => {
@@ -91,7 +100,7 @@ export default function TripRating({ destination, origin, tripTitle }: Props) {
       {recent.length > 0 && (
         <div className="space-y-2 pt-2 border-t border-white/5">
           <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">Recent Community Ratings</p>
-          {recent.slice(0,3).map((r:any,i:number)=>(
+          {recent.slice(0,3).map((r:RecentRating,i:number)=>(
             <div key={i} className="bg-white/[0.03] rounded-lg p-3 border border-white/5">
               <div className="flex items-center gap-2">
                 <span className="flex">{Array.from({length:5}).map((_,k)=><Star key={k} className={`w-3 h-3 ${k < r.rating ? 'fill-sky-400 text-sky-300' : 'text-white/15'}`} />)}</span>

@@ -1,19 +1,27 @@
 import sys
 import os
-import uuid
-from fastapi import FastAPI, HTTPException
+import time
+from collections import defaultdict
+from typing import Annotated
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, field_validator
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import List, Optional, Dict, Any, ClassVar
 import json
-import mysql.connector
 from dotenv import load_dotenv
 load_dotenv()
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.agents import LangTravelAgents, TravelPlanState
-from db.database import save_itinerary, save_trip_rating, get_trip_ratings, get_rating_stats, get_place_cache, set_place_cache
+from db.database import (
+    bootstrap as db_bootstrap,
+    create_user, delete_itinerary, get_itinerary, get_place_cache, get_rating_stats,
+    get_trip_ratings, get_user_by_id, list_user_itineraries, save_itinerary,
+    save_trip_rating, set_place_cache, verify_credentials,
+)
+from backend import auth
 from config.api_config import get_api_status
 
 app = FastAPI()
@@ -27,10 +35,24 @@ def get_agent_system() -> LangTravelAgents:
         _agent_system = LangTravelAgents()
     return _agent_system
 
-# Enable CORS for the React frontend
+
+@app.on_event("startup")
+async def _connect_neon():
+    """Create the Neon schema up front. Never fatal: the health check must still
+    answer even with a bad DATABASE_URL so the deploy is not marked unhealthy."""
+    db_bootstrap()
+
+
+# Enable CORS for the React frontend. allow_credentials is required for the
+# session cookie to survive the cross-origin call from the Vercel frontend.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, this should be more restricted
+    allow_origins=[
+        o.strip().rstrip("/")
+        for o in (os.getenv("CORS_ORIGINS") or "http://localhost:3000").split(",")
+        if o.strip()
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -44,6 +66,165 @@ async def health_check():
         "service": "xplora-backend",
         "api_status": get_api_status(),
     }
+
+# ════════════════════════ accounts & sessions ════════════════════════
+
+_dummy_hash = None
+
+
+def _dummy_hash():
+    """Hashed once so a sign-in attempt against an unknown email still costs the
+    same as a real password check (no user-enumeration timing oracle)."""
+    global _dummy_hash
+    if _dummy_hash is None:
+        _dummy_hash = auth.hash_password("xplora-timing-equaliser")
+    return _dummy_hash
+
+
+# Cookie is the primary transport; Bearer is accepted for API clients and tests.
+_bearer = HTTPBearer(auto_error=False)
+BearerCreds = Annotated[Optional[HTTPAuthorizationCredentials], Depends(_bearer)]
+
+
+def _token_from_request(request: Request, bearer_creds: Optional[HTTPAuthorizationCredentials]) -> Optional[str]:
+    if bearer_creds is not None:
+        return bearer_creds.credentials
+    return request.cookies.get(auth.COOKIE_NAME)
+
+
+async def _resolve_user(request: Request, bearer_creds: BearerCreds) -> Optional[dict]:
+    user_id = auth.decode_token(_token_from_request(request, bearer_creds))
+    if user_id is None:
+        return None
+    try:
+        return get_user_by_id(user_id)
+    except Exception as e:
+        print(f"session lookup failed: {e}")
+        return None
+
+
+OptionalUser = Annotated[Optional[dict], Depends(_resolve_user)]
+
+
+async def require_user(user: OptionalUser) -> dict:
+    if user is None:
+        raise HTTPException(status_code=401, detail="Sign in to continue")
+    return user
+
+
+CurrentUser = Annotated[dict, Depends(require_user)]
+
+
+def _issue_session(response: Response, user: dict) -> None:
+    response.set_cookie(
+        key=auth.COOKIE_NAME,
+        value=auth.create_token(user),
+        max_age=auth.cookie_max_age(),
+        path="/",
+        httponly=True,
+        secure=auth.cookie_secure(),
+        samesite="lax",
+    )
+
+
+class SignUpRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=200)
+    confirm_password: Optional[str] = None
+    display_name: Optional[str] = Field(default=None, max_length=80)
+
+
+class SignInRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=200)
+
+
+# Very small in-process guard against credential stuffing. Multi-worker
+# deployments should put this behind a real rate limiter.
+_LOGIN_WINDOW_SECONDS = 300
+_LOGIN_MAX_FAILURES = 8
+_login_failures: Dict[str, List[float]] = defaultdict(list)
+
+
+def _too_many_attempts(key: str) -> bool:
+    now = time.time()
+    hits = [t for t in _login_failures[key] if now - t < _LOGIN_WINDOW_SECONDS]
+    _login_failures[key] = hits
+    return len(hits) >= _LOGIN_MAX_FAILURES
+
+
+def _record_attempt(key: str) -> None:
+    _login_failures[key].append(time.time())
+
+
+auth_router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+@auth_router.post("/signup", status_code=201)
+async def signup(req: SignUpRequest, response: Response):
+    problem = auth.password_problem(req.password, req.confirm_password)
+    if problem:
+        raise HTTPException(status_code=422, detail=problem)
+    user = create_user(req.email, auth.hash_password(req.password), req.display_name)
+    if user is None:
+        raise HTTPException(status_code=409, detail="That email is already registered. Sign in instead.")
+    _issue_session(response, user)
+    return {"user": user}
+
+
+@auth_router.post("/login")
+async def login(req: SignInRequest, response: Response):
+    key = req.email.lower().strip()
+    if _too_many_attempts(key):
+        raise HTTPException(status_code=429, detail="Too many sign-in attempts. Try again in a few minutes.")
+    user, reason = verify_credentials(req.email, req.password)
+    if reason == "db_error":
+        raise HTTPException(status_code=503, detail="Database unavailable. Please retry.")
+    if user is None:
+        _record_attempt(key)
+        if reason == "unknown_email":
+            _dummy_hash()  # equalise response time for unknown emails
+        # Deliberately vague: never reveal whether the email exists.
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
+    _login_failures.pop(key, None)
+    _issue_session(response, user)
+    return {"user": user}
+
+
+@auth_router.post("/logout")
+async def logout(response: Response):
+    response.delete_cookie(auth.COOKIE_NAME, path="/")
+    return {"ok": True}
+
+
+@auth_router.get("/me")
+async def me(user: CurrentUser):
+    return {"user": user}
+
+
+@auth_router.get("/itineraries")
+async def my_itineraries(user: CurrentUser, limit: int = 50):
+    return {"itineraries": list_user_itineraries(user["id"], limit=limit)}
+
+
+@auth_router.get("/itineraries/{itinerary_id}")
+async def my_itinerary(itinerary_id: int, user: CurrentUser):
+    stored = get_itinerary(itinerary_id, user_id=user["id"])
+    if not stored:
+        raise HTTPException(status_code=404, detail="Itinerary not found")
+    stored["itinerary_data"] = stored.get("itinerary_data") or {}
+    return stored
+
+
+@auth_router.delete("/itineraries/{itinerary_id}")
+async def delete_my_itinerary(itinerary_id: int, user: CurrentUser):
+    if not delete_itinerary(itinerary_id, user["id"]):
+        raise HTTPException(status_code=404, detail="Itinerary not found")
+    return {"ok": True}
+
+
+app.include_router(auth_router)
+
 
 class PlanRequest(BaseModel):
     origin: Optional[str] = ""
@@ -61,6 +242,7 @@ class PlanRequest(BaseModel):
     occasion: Optional[str] = ""
     language_preference: Optional[str] = "English only"
     risk_tolerance: Optional[str] = "Balanced"
+    title: Optional[str] = ""
 
     VALID_BUDGETS: ClassVar[List[str]] = ["Essential", "Premier", "Elite", "Legendary"]
     VALID_PACES: ClassVar[List[str]] = ["Relaxed", "Moderate", "Active", "Intense"]
@@ -317,7 +499,7 @@ async def scrapling_search_endpoint(q: str = "", origin: str = "", destination: 
 
 
 @app.post("/api/generate-itinerary")
-async def generate_itinerary(req: PlanRequest):
+async def generate_itinerary(req: PlanRequest, user: OptionalUser):
     try:
         agent_system = get_agent_system()
         
@@ -373,7 +555,7 @@ async def generate_itinerary(req: PlanRequest):
         except Exception as enrich_e:
             print(f"[WARNING] Post-enrichment failed: {enrich_e}")
         
-        # Store in MySQL database
+        # Store in Neon Postgres, owned by the signed-in user when there is one
         save_itinerary(
             req.origin, 
             req.destination, 
@@ -388,7 +570,9 @@ async def generate_itinerary(req: PlanRequest):
             accessibility=req.accessibility,
             pace=req.pace,
             accommodation_preference=req.accommodation_preference,
-            occasion=req.occasion
+            occasion=req.occasion,
+            title=req.title,
+            user_id=(user or {}).get("id")
         )
         
         # Clean the output (some components might return strings instead of dicts)
@@ -426,8 +610,11 @@ class TripRatingRequest(BaseModel):
 
 
 @app.post("/api/trip-rating")
-async def post_trip_rating(req: TripRatingRequest):
-    ok = save_trip_rating(req.destination, req.rating, req.feedback or "", req.origin or "", req.trip_title or "")
+async def post_trip_rating(req: TripRatingRequest, user: OptionalUser):
+    ok = save_trip_rating(
+        req.destination, req.rating, req.feedback or "", req.origin or "",
+        req.trip_title or "", user_id=(user or {}).get("id"),
+    )
     if not ok:
         raise HTTPException(status_code=500, detail="Could not save rating")
     stats = get_rating_stats(req.destination)

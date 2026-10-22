@@ -19,8 +19,10 @@ import {
   Sparkles,
   ArrowRight,
   Zap,
+  LayoutDashboard,
 } from 'lucide-react';
 import BrandMark from '../components/BrandMark';
+import { useAuth } from '../utils/auth';
 
 const DESTINATIONS = [
   'Kyoto', 'Patagonia', 'Marrakech', 'Reykjavík', 'Lisbon', 'Queenstown',
@@ -174,6 +176,7 @@ function CountUp({ to, suffix = '' }: { to: number; suffix?: string }) {
 
 export default function Landing() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [dIdx, setDIdx] = useState(0);
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -325,6 +328,17 @@ export default function Landing() {
             <span className="relative z-10">VIEW THE APPLICATION</span>
             <ArrowRight className="w-5 h-5 relative z-10 group-hover:translate-x-1 transition-transform duration-300" />
           </button>
+
+          {/* Returning travellers go straight to their own itineraries */}
+          {user && (
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="group relative py-4 px-8 rounded-2xl flex items-center gap-3 tracking-[0.12em] text-sm font-bold border border-white/20 bg-[#0c0e12]/70 text-slate-100 hover:bg-[#0c0e12]/95 hover:text-white hover:border-sky-400/50 backdrop-blur-md transition-all"
+            >
+              <LayoutDashboard className="w-5 h-5 text-sky-300" />
+              MY TRIPS
+            </button>
+          )}
         </motion.div>
 
         {/* Scroll indicator */}

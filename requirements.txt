@@ -11,7 +11,13 @@ python-dotenv
 requests
 tenacity
 uvicorn
-mysql-connector-python
+# Neon (serverless Postgres) — replaces the old MySQL layer
+psycopg[binary,pool]
+# Auth: bcrypt password hashing + JWT session cookie
+PyJWT
+bcrypt
+# pydantic v2 email validation for the sign-up endpoint
+email-validator
 pinecone-client
 langchain-pinecone
 scrapling

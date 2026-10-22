@@ -16,16 +16,17 @@ services:
       # Required
       - key: GROQ_API_KEY
         sync: true
-      - key: MYSQL_HOST
+      # Neon (serverless Postgres). Use the POOLED endpoint; the secret lives in
+      # the Render service's environment, never in the repo.
+      - key: DATABASE_URL
         sync: true
-      - key: MYSQL_USER
-        sync: true
-      - key: MYSQL_PASSWORD
-        sync: true
-      - key: MYSQL_DATABASE
-        sync: true
-      - key: MYSQL_PORT
-        value: "3306"
+      - key: JWT_SECRET
+        generateValue: true
+      # Comma-separated frontend origins allowed to send the session cookie.
+      - key: CORS_ORIGINS
+        value: "http://localhost:3000,http://localhost:5173,https://xplora-travel-agent.vercel.app"
+      - key: AUTH_COOKIE_SECURE
+        value: "true"
       # Recommended / optional (leave blank if unused)
       - key: OPENROUTER_API_KEY
         sync: true

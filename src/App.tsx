@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Download,
   MapPin,
@@ -38,7 +38,9 @@ import {
   Smile,
   Thermometer,
   SlidersHorizontal,
-  ChevronDown
+  ChevronDown,
+  LayoutDashboard,
+  LogIn
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
@@ -77,7 +79,7 @@ async function webSearchFallback(destination: string, duration: number, interest
     }
   };
 
-  const symbol = destination.toLowerCase().includes('japan') || destination.toLowerCase().includes('tokyo') || destination.toLowerCase().includes('kyoto') || destination.toLowerCase().includes('osaka') ? '¥' : '$'; // eslint-disable-line
+  const symbol = destination.toLowerCase().includes('japan') || destination.toLowerCase().includes('tokyo') || destination.toLowerCase().includes('kyoto') || destination.toLowerCase().includes('osaka') ? '¥' : '$';
 
   const attractions = await search(`${destination} best attractions things to do must see`);
   const food = await search(`${destination} best restaurants local food ${interests.join(' ')}`);
@@ -86,9 +88,9 @@ async function webSearchFallback(destination: string, duration: number, interest
   const activitiesPerDay = { Relaxed: 2, Moderate: 3, Active: 4, Intense: 5 }[pace] || 3;
   const dayThemes = ['Arrival & Discovery', 'Cultural Immersion', 'Local Exploration', 'Hidden Gems', 'Signature Experiences', 'Adventure Day', 'Relaxation & Reflection', 'Farewell & Memories'];
 
-  const days: any[] = [];
-  for (let d = 1; d <= duration; d++) { // eslint-disable-line
-    const activities: any[] = [];
+  const days: DayData[] = [];
+  for (let d = 1; d <= duration; d++) {
+    const activities: ActivityData[] = [];
     activities.push({
       time: '09:00 AM',
       title: `Day ${d} Morning - Discover ${destination}`,
@@ -98,7 +100,7 @@ async function webSearchFallback(destination: string, duration: number, interest
       map_query: destination,
       transport_to_next: { mode: 'Walking', duration: '15 min', cost: 'Free', instructions: `Walk to your next stop in ${destination}` }
     });
-    const limitCheck = activitiesPerDay; // eslint-disable-line
+    const limitCheck = activitiesPerDay;
     if (limitCheck >= 2) {
       activities.push({
         time: '12:30 PM',
@@ -148,6 +150,8 @@ import { generateItineraryICS, generateItineraryPDF } from './utils/export';
 
 // API Configuration
 import { API_BASE_URL } from './utils/apiBase';
+import { fetchSavedItinerary, refreshAuth, signOut, useAuth, apiError } from './utils/auth';
+import { parseAgentField, parseStoredPlan } from './utils/savedTrips';
 
 // Types
 export interface ActivityData {
@@ -182,12 +186,24 @@ export interface ItineraryData {
   days: DayData[];
 }
 
+export interface MobilityOption {
+  company?: string;
+  mode?: string;
+  pros_cons?: string;
+  why?: string;
+}
+
+export interface MobilitySection {
+  comparison_tips?: string[];
+  options?: MobilityOption[];
+}
+
 export interface MobilityData {
-  flights?: any;
-  regional_trains_buses?: any;
-  car_rentals?: any;
-  airport_transfers?: any;
-  local_transport?: any;
+  flights?: MobilitySection | string;
+  regional_trains_buses?: MobilitySection | string;
+  car_rentals?: MobilitySection | string;
+  airport_transfers?: MobilitySection | string;
+  local_transport?: MobilitySection | string;
   route_optimization?: {
     strategy?: string;
     suggested_area_groupings?: string[];
@@ -208,6 +224,26 @@ export interface WeatherData {
   best_times?: string[];
   activity_suggestions?: string[];
   packing?: string[];
+}
+
+export interface LocalExpertSection {
+  title?: string;
+  insights?: string[];
+}
+
+export interface LocalExpertData {
+  summary?: string;
+  contemporary_behaviors?: LocalExpertSection;
+  unwritten_customs?: LocalExpertSection;
+  folklore_heritage?: LocalExpertSection;
+  guidebook_vs_reality?: LocalExpertSection;
+  authenticity_signals?: LocalExpertSection;
+  sensory_profile?: {
+    title?: string;
+    sounds?: string[];
+    scents?: string[];
+    colors?: string[];
+  };
 }
 
 const interestsOptions = [
@@ -252,7 +288,7 @@ function App() {
   const [itinerary, setItinerary] = useState<ItineraryData | null>(null);
   const [mobility, setMobility] = useState<MobilityData | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
-  const [localExpert, setLocalExpert] = useState<any>(null);
+  const [localExpert, setLocalExpert] = useState<LocalExpertData | null>(null);
   const [isIntelligenceOpen, setIsIntelligenceOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -260,6 +296,69 @@ function App() {
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<'itinerary' | 'ask'>('itinerary');
   const [showMorePrefs, setShowMorePrefs] = useState(false);
+
+  // Account state (shared store backed by the HTTP-only session cookie)
+  const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const savedTripIdParam = searchParams.get('trip');
+  const [savedTripId, setSavedTripId] = useState<number | null>(null);
+  const [savedTripTitle, setSavedTripTitle] = useState('');
+  const [savedTripBusy, setSavedTripBusy] = useState(false);
+
+  // Restore the session on mount. Never blocks the page: /app stays usable
+  // signed out, the cookie just decides whether trips get archived.
+  useEffect(() => {
+    refreshAuth();
+  }, []);
+
+  // Reopen a trip chosen on the dashboard: the stored agent_outputs map is fed
+  // through the same parsers as a live generation.
+  useEffect(() => {
+    if (!savedTripIdParam) return;
+    const id = Number(savedTripIdParam);
+    if (!Number.isInteger(id) || id <= 0 || id === savedTripId) return;
+    let cancelled = false;
+    (async () => {
+      setSavedTripBusy(true);
+      setError(null);
+      try {
+        const stored = await fetchSavedItinerary(id);
+        if (cancelled) return;
+        const parsed = parseStoredPlan(stored.itinerary_data);
+        if (!parsed.itinerary) {
+          setError('This saved trip has no itinerary data to display.');
+        } else {
+          setItinerary(parsed.itinerary);
+          setMobility(parsed.mobility);
+          setWeather(parsed.weather);
+          setLocalExpert(parsed.localExpert as LocalExpertData | null);
+        }
+        setDestination(stored.destination || '');
+        setOrigin(stored.origin || '');
+        if (stored.duration) setDuration(stored.duration);
+        if (stored.budget) setBudget(stored.budget);
+        if (Array.isArray(stored.interests) && stored.interests.length) setSelectedInterests(stored.interests);
+        if (stored.travel_dates) setTravelDates(stored.travel_dates);
+        if (stored.group_size) setGroupSize(stored.group_size);
+        if (stored.group_type) setGroupType(stored.group_type);
+        if (stored.pace) setPace(stored.pace);
+        if (stored.accommodation_preference) setAccommodationPreference(stored.accommodation_preference);
+        if (stored.occasion) setOccasion(stored.occasion);
+        if (Array.isArray(stored.dietary_requirements)) setDietaryRequirements(stored.dietary_requirements);
+        if (Array.isArray(stored.accessibility)) setAccessibility(stored.accessibility);
+        setSavedTripTitle(stored.title || stored.destination || 'Saved trip');
+        setSavedTripId(id);
+        setActiveTab(0);
+        setViewMode('itinerary');
+      } catch (err) {
+        if (!cancelled) setError(apiError(err));
+      } finally {
+        if (!cancelled) setSavedTripBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedTripIdParam]);
 
   const toggleInterest = (id: string) => {
     setSelectedInterests(prev =>
@@ -374,7 +473,7 @@ function App() {
     setItinerary(null);
 
     try {
-      let data: any = null;
+      let data: Record<string, unknown> | null = null;
 
       try {
         const response = await axios.post(`${API_BASE_URL}/api/generate-itinerary`, {
@@ -392,13 +491,14 @@ function App() {
           accommodation_preference: accommodationPreference,
           occasion: occasion,
           language_preference: languagePreference,
-          risk_tolerance: riskTolerance
-        }, { timeout: 180000 });
+          risk_tolerance: riskTolerance,
+          title: destination ? `Trip to ${destination}` : ''
+        }, { timeout: 180000, withCredentials: true });
 
         data = response.data;
-        console.log('[DEBUG] Full API response keys:', Object.keys(data));
-      } catch (networkErr: any) {
-        console.warn('[WARN] Backend itinerary call failed, falling back to web research:', networkErr?.message || networkErr);
+        console.log('[DEBUG] Full API response keys:', Object.keys(data ?? {}));
+      } catch (networkErr) {
+        console.warn('[WARN] Backend itinerary call failed, falling back to web research:', (networkErr as { message?: string })?.message ?? networkErr);
         data = {
           itinerary_planner: await webSearchFallback(destination, duration, selectedInterests, budget, travelDates, pace, groupSize, groupType),
           weather_analyst: null,
@@ -407,34 +507,21 @@ function App() {
         };
       }
 
-      const parseField = (field: any) => {
-        if (!field) return null;
-        let obj = field.output || field;
-        if (typeof obj === 'string') {
-          try {
-            // Find JSON in string if it's there
-            const match = obj.match(/\{[\s\S]*\}/);
-            if (match) return JSON.parse(match[0]);
-            return obj;
-          } catch (e) { return obj; }
-        }
-        return obj;
-      };
-
-      setItinerary(parseField(data?.itinerary_planner));
-      setMobility(parseField(data?.transport_mobility));
-      setWeather(parseField(data?.weather_analyst));
-      setLocalExpert(parseField(data?.local_expert));
+      setItinerary(parseAgentField<ItineraryData>(data?.itinerary_planner));
+      setMobility(parseAgentField<MobilityData>(data?.transport_mobility));
+      setWeather(parseAgentField<WeatherData>(data?.weather_analyst));
+      setLocalExpert(parseAgentField<LocalExpertData>(data?.local_expert));
 
       setActiveTab(0);
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      const detail = err.response?.data?.detail || '';
+      const apiErr = err as { response?: { data?: { detail?: string } }; code?: string };
+      const detail = apiErr.response?.data?.detail || '';
       if (detail.includes('capacity') || detail.includes('rate limit') || detail.includes('overloaded')) {
         setError("Travel planning is temporarily busy. Please try again in a moment.");
       } else if (detail) {
         setError(detail);
-      } else if (err.code === 'ECONNREFUSED' || err.code === 'ERR_NETWORK') {
+      } else if (apiErr.code === 'ECONNREFUSED' || apiErr.code === 'ERR_NETWORK') {
         setError("Cannot reach the server. Please check your connection and try again.");
       } else {
         setError("Something went wrong while planning your trip. Please try again.");
@@ -497,6 +584,8 @@ function App() {
 
   const handleReset = () => {
     setItinerary(null);
+    setSavedTripTitle('');
+    setSavedTripId(null);
     setMobility(null);
     setWeather(null);
     setLocalExpert(null);
@@ -563,7 +652,40 @@ function App() {
             </div>
           </button>
           {/* View mode toggle */}
-          <div className="flex gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            {user ? (
+              <>
+                <Link
+                  to="/dashboard"
+                  title="Your dashboard"
+                  className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest bg-white/[0.04] border border-white/[0.06] text-slate-300 hover:bg-white/[0.08] hover:text-white transition-all"
+                >
+                  <LayoutDashboard className="w-3.5 h-3.5" />
+                  Trips
+                </Link>
+                <button
+                  onClick={() => navigate('/dashboard')}
+                  title={user.email}
+                  className="px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest bg-sky-400/10 border border-sky-400/30 text-sky-200 hover:bg-sky-400/20 transition-all max-w-[150px] truncate"
+                >
+                  {(user.display_name || user.email).split(' ')[0]}
+                </button>
+                <button
+                  onClick={async () => { await signOut(); handleReset(); }}
+                  className="px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest border border-white/[0.06] text-slate-500 hover:text-white hover:bg-white/[0.06] transition-all"
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => navigate('/login')}
+                className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-widest bg-gradient-to-br from-sky-400/20 to-sky-400/5 border border-sky-400/30 text-sky-200 hover:text-white hover:border-sky-400/60 transition-all"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                Sign in
+              </button>
+            )}
             <button
               onClick={() => handleResetAndSwitch('itinerary')}
               className={`px-3 sm:px-4 py-2 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all duration-300 border ${viewMode === 'itinerary'
@@ -591,6 +713,48 @@ function App() {
           </div>
         </div>
       </header>
+
+      {/* Reopened-from-dashboard / unsaved-session context strip */}
+      {viewMode === 'itinerary' && (savedTripBusy || savedTripTitle || (!user && !!itinerary)) && (
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-sky-400/25 bg-sky-400/[0.07] px-4 py-3 text-xs">
+            {savedTripBusy ? (
+              <>
+                <RefreshCcw className="w-4 h-4 text-sky-300 animate-spin" />
+                <span className="text-sky-100">Loading your saved trip…</span>
+              </>
+            ) : savedTripTitle ? (
+              <>
+                <LayoutDashboard className="w-4 h-4 text-sky-300 shrink-0" />
+                <span className="text-sky-100 font-medium truncate">Viewing saved trip · {savedTripTitle}</span>
+                <button
+                  onClick={() => { handleReset(); navigate('/app'); }}
+                  className="ml-auto text-[10px] font-bold uppercase tracking-widest text-sky-300 hover:text-white transition-colors"
+                >
+                  Plan a new trip
+                </button>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 text-sky-300 shrink-0" />
+                <span className="text-slate-200">This trip is not saved to an account yet.</span>
+                <Link
+                  to="/signup"
+                  className="text-[10px] font-bold uppercase tracking-widest text-sky-300 hover:text-white transition-colors"
+                >
+                  Sign up to keep it
+                </Link>
+                <Link
+                  to="/login"
+                  className="text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-colors"
+                >
+                  Sign in
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Trip Planner Form — full width, booking-style */}
       {viewMode === 'itinerary' && (
@@ -1430,8 +1594,8 @@ function App() {
                           <div className="text-5xl text-slate-300 font-normal italic absolute -top-5 -left-2 italic leading-none select-none">"</div>
                           <p className="text-slate-300 text-[13px] leading-[1.9] mb-8 font-light italic relative z-10 pl-2">
                             {localExpert ? (
-                              typeof localExpert === 'string' 
-                                ? (localExpert.length > 350 ? localExpert.substring(0, 350) + "..." : localExpert)
+                              typeof localExpert === 'string'
+                                ? (String(localExpert).length > 350 ? String(localExpert).substring(0, 350) + "..." : localExpert)
                                 : (localExpert.summary ? (localExpert.summary.length > 350 ? localExpert.summary.substring(0, 350) + "..." : localExpert.summary) : "Loading...")
                             ) : (
                               "We are gathering contemporary cultural nuances and heritage secrets for this specific destination to enhance your perspective."
@@ -1506,7 +1670,7 @@ function App() {
                                             {item.data.options && (
                                               <div className="space-y-3">
                                                 <div className="text-sky-300 font-bold uppercase tracking-widest text-[9px]">Validated Providers</div>
-                                                {item.data.options.slice(0, 3).map((o: any, i: number) => (
+                                                {item.data.options.slice(0, 3).map((o: MobilityOption, i: number) => (
                                                   <div key={i} className="p-3 bg-white/[0.03] rounded-xl border border-white/5 hover:border-sky-400/20 transition-all duration-300">
                                                     <div className="font-bold text-white mb-1 text-xs">{o.company || o.mode}</div>
                                                     <div className="text-slate-500 text-[10px] leading-relaxed">{o.pros_cons || o.why || 'No additional details'}</div>
@@ -1647,7 +1811,7 @@ function App() {
                             <span>{ins}</span>
                           </li>
                         ))}
-                        {(!localExpert?.contemporary_behaviors?.insights || localExpert.contemporary_behaviors.insights.length === 0) && (
+                        {(!localExpert?.contemporary_behaviors?.insights || localExpert?.contemporary_behaviors?.insights?.length === 0) && (
                           <li className="text-xs font-medium text-slate-500 italic p-2">No contemporary trends indexed.</li>
                         )}
                       </ul>
@@ -1668,7 +1832,7 @@ function App() {
                             <span>{ins}</span>
                           </li>
                         ))}
-                        {(!localExpert?.unwritten_customs?.insights || localExpert.unwritten_customs.insights.length === 0) && (
+                        {(!localExpert?.unwritten_customs?.insights || localExpert?.unwritten_customs?.insights?.length === 0) && (
                           <li className="text-xs font-medium text-slate-500 italic p-2">No social customs indexed.</li>
                         )}
                       </ul>
@@ -1689,7 +1853,7 @@ function App() {
                             <span>{ins}</span>
                           </li>
                         ))}
-                        {(!localExpert?.folklore_heritage?.insights || localExpert.folklore_heritage.insights.length === 0) && (
+                        {(!localExpert?.folklore_heritage?.insights || localExpert?.folklore_heritage?.insights?.length === 0) && (
                           <li className="text-xs font-medium text-slate-500 italic p-2">No folklore or heritage stories indexed.</li>
                         )}
                       </ul>
@@ -1710,7 +1874,7 @@ function App() {
                             <span>{ins}</span>
                           </li>
                         ))}
-                        {(!localExpert?.guidebook_vs_reality?.insights || localExpert.guidebook_vs_reality.insights.length === 0) && (
+                        {(!localExpert?.guidebook_vs_reality?.insights || localExpert?.guidebook_vs_reality?.insights?.length === 0) && (
                           <li className="text-xs font-medium text-slate-500 italic p-2">No reality insights indexed.</li>
                         )}
                       </ul>
@@ -1731,7 +1895,7 @@ function App() {
                             <span>{ins}</span>
                           </li>
                         ))}
-                        {(!localExpert?.authenticity_signals?.insights || localExpert.authenticity_signals.insights.length === 0) && (
+                        {(!localExpert?.authenticity_signals?.insights || localExpert?.authenticity_signals?.insights?.length === 0) && (
                           <li className="text-xs font-medium text-slate-500 italic md:col-span-2 p-2">No authenticity signals indexed.</li>
                         )}
                       </ul>

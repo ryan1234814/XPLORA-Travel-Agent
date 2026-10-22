@@ -1,6 +1,6 @@
 # Setup & Run Guide 🚀
 
-This guide explains how to set up and run the **XPLORA Travel Agent** locally. The project consists of a **FastAPI backend** (Python), a **React frontend** (Node/Vite), and **MySQL database** integration for storing generated itineraries.
+This guide explains how to set up and run the **XPLORA Travel Agent** locally. The project consists of a **FastAPI backend** (Python), a **React frontend** (Node/Vite), and a **Neon (serverless Postgres)** database for accounts, saved itineraries, ratings and the place-review cache.
 
 > **Web search is powered by DuckDuckGo — no API keys required for search functionality.**
 
@@ -11,7 +11,8 @@ This guide explains how to set up and run the **XPLORA Travel Agent** locally. T
 ```
 XPLORA-Travel-Agent/
 ├── backend/
-│   └── api.py              # FastAPI application & routes
+│   ├── api.py              # FastAPI application & routes
+│   └── auth.py             # Password hashing + JWT session cookie
 ├── agents/
 │   ├── agents.py            # LangGraph multi-agent orchestration
 │   └── tools/
@@ -20,11 +21,14 @@ XPLORA-Travel-Agent/
 │   ├── api_config.py        # API keys & external service config
 │   └── langgraph_config.py  # LLM provider & agent settings
 ├── db/
-│   └── database.py          # MySQL database models & helpers
+│   ├── database.py          # Neon Postgres helpers & schema
+│   └── rag.py               # Pinecone vector store (optional RAG)
 ├── src/                     # React frontend source
 │   ├── App.tsx              # Main application component
 │   ├── App.css              # Component styles
-│   └── index.css            # Global styles & CSS variables
+│   ├── index.css            # Global styles & CSS variables
+│   ├── utils/auth.ts        # Frontend session store
+│   └── pages/               # Landing, Login, Signup, Dashboard, AskPlace
 ├── data/                    # Travel knowledge base (blog content)
 ├── .env                     # Environment variables (create this)
 ├── requirements.txt         # Python dependencies
@@ -40,7 +44,7 @@ XPLORA-Travel-Agent/
 
 - **Python 3.9+** (tested with 3.14)
 - **Node.js 20+** and npm
-- **MySQL Server** (running on default port 3306)
+- **A Neon account** — free tier is enough: <https://console.neon.tech>
 - **A Groq API Key** — [Get one free here](https://console.groq.com/keys)
 
 ### Optional (for enhanced features)
@@ -59,11 +63,13 @@ Create a `.env` file in the project root directory:
 
 ```env
 # ─── Database Configuration (Required) ───
-MYSQL_HOST="localhost"
-MYSQL_PORT=3306
-MYSQL_USER="root"
-MYSQL_PASSWORD="your_password"
-MYSQL_DATABASE="travel_agent"
+# Neon -> Project -> Connection Details -> *pooled* endpoint
+DATABASE_URL="postgresql://user:pass@ep-xxx-pooler.ap-southeast-1.aws.neon.tech/travel_agent?sslmode=require"
+
+# ─── Accounts / Sessions (Required for sign-up & dashboard) ───
+JWT_SECRET="run: openssl rand -hex 32"
+CORS_ORIGINS="http://localhost:3000"   # comma-separated frontend origins
+AUTH_COOKIE_SECURE="false"             # set true once served over HTTPS
 
 # ─── Main LLM Configuration (Required) ───
 # Choose one provider and set its key:
@@ -82,7 +88,21 @@ PINECONE_API_KEY="your_pinecone_api_key_here"
 PINECONE_INDEX_NAME="travel-guides"
 ```
 
-> **Minimum required:** Only `GROQ_API_KEY` and the MySQL credentials are essential to run the app. All other keys unlock enhanced features.
+> **Minimum required:** `GROQ_API_KEY`, `DATABASE_URL` and `JWT_SECRET` are essential to run the app with accounts. All other keys unlock enhanced features.
+
+### Creating the Neon database
+
+Either from the console, or with the Neon CLI:
+
+```bash
+npm install -g neon
+neon login
+neon projects create --name xplora-travel --region-id aws-ap-southeast-1 --database travel_agent
+neon connection-string --pooled     # paste this into DATABASE_URL
+```
+
+No manual SQL is needed: `users`, `itineraries`, `trip_ratings` and `place_reviews_cache` are
+created by the backend on startup (`db/database.py`).
 
 ---
 
@@ -109,15 +129,13 @@ From the project root:
 npm install
 ```
 
-### 3. MySQL Database
+### 3. Neon Database
 
-Create the database (if it doesn't exist):
+Point `DATABASE_URL` in your `.env` at a Neon (serverless Postgres) project — see
+[Creating the Neon database](#creating-the-neon-database) above.
 
-```sql
-CREATE DATABASE IF NOT EXISTS travel_agent;
-```
-
-The app will automatically create the required tables on first run.
+No manual SQL is required: the `users`, `itineraries`, `trip_ratings` and
+`place_reviews_cache` tables are created automatically on first backend startup.
 
 ---
 
@@ -221,7 +239,7 @@ The `vercel.json` configuration builds and hosts the React frontend. You **must*
 |-------|----------|
 | `ModuleNotFoundError: No module named 'agents.tools.travel'` | Run `pip install -r requirements.txt` from the project root |
 | `GROQ_API_KEY not found` | Add your Groq API key to the `.env` file |
-| MySQL connection error | Ensure MySQL is running and credentials in `.env` are correct |
+| Neon/Postgres connection error | Ensure `DATABASE_URL` uses the **pooled** endpoint (`...-pooler...`) and `sslmode=require` |
 | `npm run build` fails | Run `npm install` first, then `npm run build` |
 | Port 8000 already in use | Kill the existing process: `lsof -ti:8000 | xargs kill -9` |
 | Search returns no results | DuckDuckGo may be rate-limiting; wait a moment and retry |
