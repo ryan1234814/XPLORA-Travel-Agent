@@ -45,13 +45,18 @@ async def _connect_neon():
 
 # Enable CORS for the React frontend. allow_credentials is required for the
 # session cookie to survive the cross-origin call from the Vercel frontend.
+# The deployed production origin is always allowed (belt-and-braces) so the
+# live site works even if CORS_ORIGINS is missing or stale in the environment;
+# CORS_ORIGINS adds any extra origins (e.g. local dev) on top of that.
+_PROD_ORIGINS = {"https://xplora-travel-agent.vercel.app"}
+_env_origins = {
+    o.strip().rstrip("/")
+    for o in (os.getenv("CORS_ORIGINS") or "http://localhost:3000").split(",")
+    if o.strip()
+}
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        o.strip().rstrip("/")
-        for o in (os.getenv("CORS_ORIGINS") or "http://localhost:3000").split(",")
-        if o.strip()
-    ],
+    allow_origins=sorted(_PROD_ORIGINS | _env_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
