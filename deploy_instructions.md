@@ -74,3 +74,50 @@ Vercel will build and host your Vite/React static assets.
 Whenever you push new changes to the `main` branch of your GitHub repository:
 - **Vercel** will automatically rebuild and redeploy the frontend client.
 - **Render** will automatically pull, install dependencies, and rebuild the FastAPI backend.
+
+---
+
+## 💤 5. Keeping the backend awake
+
+Render's free tier stops the service after ~15 minutes with no traffic. The next
+visitor then waits out a 30–60s cold start, which looks like a broken site.
+
+**The live backend is `https://xplora-backend-b3gn.onrender.com`.** The older
+`xplora-backend.onrender.com` service is suspended and answers `503 Service
+Suspended` — the Vercel project's `VITE_API_BASE_URL` must point at the live
+one, and Vite bakes that value in at build time, so changing it requires a
+redeploy.
+
+Two layers keep the service warm:
+
+1. **`.github/workflows/keep-alive.yml`** pings the health endpoint on a 10-minute
+   cron. It retries through cold starts, verifies the second (warm) response, and
+   runs once after every push to `main`. It can be run on demand from
+   *Actions → Keep backend awake → Run workflow*.
+
+2. **An external pinger — required for real uptime.** GitHub heavily throttles
+   `schedule` triggers on low-activity repositories; in practice this cron fires
+   hours apart, so the workflow alone cannot keep a 15-minute idle timer from
+   expiring. Register the health URL with a free monitor that checks every
+   1–5 minutes:
+
+   - [cron-job.org](https://cron-job.org) — free, 1-minute interval: create a job
+     for `https://xplora-backend-b3gn.onrender.com/` with method `GET`, and enable
+     "Save responses in job history" off.
+   - [UptimeRobot](https://uptimerobot.com) — free plan, 5-minute HTTP(s)
+     monitor (still under the 15-minute sleep window, and it emails you if the
+     backend really goes down).
+
+   Either one is enough; UptimeRobot also covers alerting, so it is the better
+   single choice. Keep the GitHub workflow as a second layer.
+
+**Verify the setup** at any time:
+
+```bash
+curl -s -o /dev/null -w 'HTTP %{http_code} in %{time_total}s\n' --max-time 120 \
+  https://xplora-backend-b3gn.onrender.com/
+```
+
+A warm backend answers `200` in about a second. Anything over ~20s means the
+service had gone to sleep, and multiple `503`s over several minutes mean it was
+suspended by Render — open the Render dashboard and check the service status.

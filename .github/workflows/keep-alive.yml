@@ -1,33 +1,75 @@
 name: Keep backend awake
 
-# Render's free tier sleeps after ~15 minutes of inactivity, so the next
-# request cold-starts in ~50-60s. Pinging the health endpoint every 10 minutes
-# keeps the service warm so real users never hit a cold start.
+# Render's free tier spins the service down after ~15 minutes with no traffic,
+# and the next request then waits out a 30-60s cold start. Pinging the health
+# endpoint keeps it warm so real users never hit that.
 #
-# The backend URL defaults to the current Render service. To point this at a
-# different deployment, set a repository Actions *variable* named BACKEND_URL
+# IMPORTANT: GitHub throttles `schedule` triggers on low-activity repos, so this
+# cron can fire hours apart instead of every 10 minutes. That is why this
+# workflow alone cannot guarantee a warm backend — pair it with a free external
+# pinger (see "Keeping the backend awake" in deploy_instructions.md).
+#
+# The backend URL defaults to the live Render service. Point it elsewhere by
+# setting a repository Actions *variable* named BACKEND_URL
 # (Settings -> Secrets and variables -> Actions -> Variables).
 
 on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
+  # A run right after each deploy confirms the freshly built service answers.
+  push:
+    branches: [main]
+
+# Never let two pings overlap: each one holds a runner for up to a cold start.
+concurrency:
+  group: keep-backend-awake
+  cancel-in-progress: false
 
 jobs:
   ping:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Ping backend health endpoint
+      - name: Wake and verify the backend
         env:
           BACKEND_URL: ${{ vars.BACKEND_URL || 'https://xplora-backend-b3gn.onrender.com' }}
         run: |
-          echo "Pinging $BACKEND_URL ..."
-          http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 "$BACKEND_URL/")
-          echo "HTTP $http_code"
-          # Treat any response as success: the goal is to wake the dyno, and a
-          # very slow cold start may still be warming up when curl returns.
-          if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 500 ]; then
-            echo "Backend is awake."
-          else
-            echo "Backend returned $http_code (may just be warming up)."
-          fi
+          set -u
+          url="${BACKEND_URL%/}"
+          echo "Target: $url"
+
+          # A sleeping free-tier instance can take well over a minute to boot,
+          # and the boot itself only starts once the request lands. `|| true`
+          # keeps a curl timeout (exit 28) from failing the step before the next
+          # attempt gets a chance.
+          for attempt in 1 2 3 4 5 6; do
+            body_file="$(mktemp)"
+            code="$(curl -sS -o "$body_file" -w '%{http_code}' \
+                      --connect-timeout 15 --max-time 180 "$url/" 2>/dev/null || true)"
+            body="$(head -c 300 "$body_file" 2>/dev/null || true)"
+            rm -f "$body_file"
+
+            echo "Attempt $attempt: HTTP ${code:-none} | ${body:-<no body>}"
+
+            if [ "$code" = "200" ] && printf '%s' "$body" | grep -q '"status"'; then
+              # Second call proves it is actually awake, not serving a cached
+              # edge response: a warm free-tier instance answers in ~1s.
+              start="$(date +%s%N)"
+              warm_code="$(curl -sS -o /dev/null -w '%{http_code}' \
+                            --connect-timeout 10 --max-time 60 "$url/" 2>/dev/null || true)"
+              elapsed_ms=$(( ($(date +%s%N) - start) / 1000000 ))
+              echo "Warm check: HTTP ${warm_code:-none} in ${elapsed_ms}ms"
+              if [ "$warm_code" = "200" ]; then
+                echo "Backend is awake."
+                exit 0
+              fi
+            fi
+
+            # 503 from Render means the instance is still booting (or suspended);
+            # back off and try again rather than reporting a false failure.
+            sleep 15
+          done
+
+          echo "::error::Backend did not answer healthy at $url/ after 6 attempts. Check the Render service status (a suspended service returns 503 'Service Suspended')."
+          exit 1

@@ -122,14 +122,20 @@ CurrentUser = Annotated[dict, Depends(require_user)]
 
 
 def _issue_session(response: Response, user: dict) -> None:
+    secure = auth.cookie_secure()
     response.set_cookie(
         key=auth.COOKIE_NAME,
         value=auth.create_token(user),
         max_age=auth.cookie_max_age(),
         path="/",
         httponly=True,
-        secure=auth.cookie_secure(),
-        samesite="lax",
+        secure=secure,
+        # The frontend (*.vercel.app) and this API (*.onrender.com) are different
+        # sites, so a Lax cookie is dropped on the cross-site fetch and every
+        # signed-in request would look anonymous. None+Secure is the only value
+        # browsers send cross-site; local http:// dev keeps Lax because None
+        # requires Secure.
+        samesite="none" if secure else "lax",
     )
 
 
