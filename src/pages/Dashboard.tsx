@@ -173,9 +173,11 @@ export default function Dashboard() {
 
       <main className="mx-auto max-w-wide px-4 py-10 sm:px-6 sm:py-14">
         <div className="mb-9 max-w-2xl">
-          <p className="eyebrow mb-3">Your journeys</p>
+          <p className="eyebrow mb-3">
+            {user?.display_name ? `Welcome back, ${user.display_name.split(' ')[0]}` : 'Your journeys'}
+          </p>
           <h2 className="text-[clamp(1.8rem,4vw,2.75rem)] font-semibold leading-[1.08] tracking-[-0.03em] text-white">
-            {user?.display_name ? `${user.display_name.split(' ')[0]}, your` : 'Your'} saved itineraries
+            Your saved itineraries
           </h2>
           <p className="mt-3 text-[14px] leading-relaxed text-slate-400">
             Every plan the agents generated while you were signed in lives here. Open one to pick up exactly where you left off.

@@ -60,8 +60,12 @@ export default function AuthShell({ eyebrow, title, subtitle, children, footer }
 export function FormError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <div className="mb-5 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/[0.08] px-3.5 py-3 text-[12px] text-red-300">
-      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+    <div
+      role="alert"
+      aria-live="assertive"
+      className="mb-5 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/[0.08] px-3.5 py-3 text-[12px] text-red-300"
+    >
+      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
       <span>{message}</span>
     </div>
   );
