@@ -229,7 +229,7 @@ The project includes a `render.yaml` blueprint that provisions **only** the `xpl
 
 ### Vercel (Frontend)
 
-The `vercel.json` configuration builds and hosts the React frontend. You **must** set `VITE_API_BASE_URL` in the Vercel project environment variables to the Render backend URL (e.g. `https://xplora-backend.onrender.com`) — it is baked in at build time, so redeploy after changing it. Without it, production API calls fail and the browser console logs an explicit error.
+The `vercel.json` configuration builds and hosts the React frontend. In production, all `/api/*` requests are proxied to the Render backend via a Vercel rewrite, so the session cookie stays first-party and is never blocked by third-party cookie policies. You do **not** need to set `VITE_API_BASE_URL` to the Render URL in production — it is only used for local development (defaults to `http://localhost:8000`). If the backend URL changes, update the `destination` in `vercel.json` and redeploy.
 
 ---
 

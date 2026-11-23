@@ -37,20 +37,20 @@ function TripCard({
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: Math.min(index * 0.04, 0.3), ease: [0.16, 1, 0.3, 1] }}
-      className="flat-card p-5 flex flex-col gap-3 group"
+      className="flat-card group flex flex-col gap-3 p-5"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[9px] font-bold text-sky-300 uppercase tracking-[0.25em] mb-1.5 flex items-center gap-1.5">
-            <MapPin className="w-3 h-3" />
+          <p className="mb-1.5 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.12em] text-sky-300">
+            <MapPin className="h-3 w-3" />
             {trip.destination || 'Unknown destination'}
           </p>
-          <h3 className="text-lg font-bold text-white leading-snug truncate" title={headline}>{headline}</h3>
+          <h3 className="truncate text-[16px] font-medium leading-snug text-white" title={headline}>{headline}</h3>
         </div>
         <button
           onClick={() => onDelete(trip.id)}
           title="Delete this saved trip"
-          className="shrink-0 p-2 rounded-lg border border-white/10 text-slate-500 opacity-0 group-hover:opacity-100 hover:text-red-300 hover:border-red-400/40 transition-all"
+          className="shrink-0 rounded-lg border border-white/10 p-2 text-slate-500 opacity-0 transition-all hover:border-red-400/40 hover:text-red-300 group-hover:opacity-100"
         >
           <Trash2 className="w-4 h-4" />
         </button>
@@ -61,7 +61,7 @@ function TripCard({
           {chips.map((c) => (
             <span
               key={c}
-              className="text-[10px] px-2.5 py-1 rounded-full border border-white/10 bg-white/[0.05] text-slate-300"
+              className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-0.5 text-[10px] text-slate-300"
             >
               {c}
             </span>
@@ -82,7 +82,7 @@ function TripCard({
         </p>
         <button
           onClick={() => onOpen(trip.id)}
-          className="text-[10px] font-bold uppercase tracking-[0.18em] px-3.5 py-2 rounded-xl border border-sky-400/40 text-sky-300 bg-sky-400/[0.06] hover:bg-sky-400/[0.14] hover:text-white transition-all flex items-center gap-1.5"
+          className="flex items-center gap-1.5 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-[11px] font-medium text-sky-200 transition-colors hover:bg-sky-500/20"
         >
           <Compass className="w-3.5 h-3.5" />
           Open trip
@@ -133,30 +133,27 @@ export default function Dashboard() {
 
   return (
     <div className="main-gradient min-h-screen text-slate-200">
-      <header className="sticky top-0 z-30 bg-[#0c0e12]/90 backdrop-blur-md border-b border-white/5 relative">
-        <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-sky-400 via-sky-400 via-sky-400 to-slate-500 opacity-60"></div>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
-          <Link to="/" className="flex items-center gap-3 text-left group">
-            <div className="bg-gradient-to-br from-sky-400/25 via-sky-400/15 to-sky-400/20 p-2.5 rounded-2xl border border-sky-400/10 shadow-[0_0_30px_rgba(56,189,248,0.2)] transition-transform duration-300 group-hover:scale-105">
-              <BrandMark className="w-6 h-6 text-sky-300 drop-shadow-[0_0_8px_rgba(56,189,248,0.5)]" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white leading-tight">
-                <span className="wordmark">XPLORA</span>
-              </h1>
-              <p className="text-[9px] sm:text-[10px] text-slate-500 italic tracking-[0.15em]">Your travel dashboard</p>
-            </div>
+      <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-black/70 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-wide items-center justify-between gap-4 px-4 py-2.5 sm:px-6">
+          <Link to="/" className="group flex items-center gap-2.5 text-left">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.05] transition-colors duration-300 group-hover:border-sky-500/40">
+              <BrandMark className="h-4 w-4 text-sky-300" />
+            </span>
+            <span className="flex flex-col">
+              <span className="text-[15px] font-semibold leading-tight tracking-tight text-white">XPLORA</span>
+              <span className="text-[10px] leading-tight text-slate-500">Your travel dashboard</span>
+            </span>
           </Link>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="hidden sm:block text-[10px] uppercase tracking-[0.2em] text-slate-500 mr-1 truncate max-w-[180px]">
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="mr-1 hidden max-w-[180px] truncate text-[11px] text-slate-500 sm:block">
               {user?.display_name || user?.email}
             </span>
             <button
               onClick={() => navigate('/app')}
-              className="btn-accent px-3 sm:px-4 py-2 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-widest flex items-center gap-1.5"
+              className="btn-accent flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[11px] font-medium"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Plan a trip</span>
               <span className="sm:hidden">Plan</span>
             </button>
@@ -166,39 +163,39 @@ export default function Dashboard() {
                 navigate('/login', { replace: true });
               }}
               title="Sign out"
-              className="p-2 rounded-xl border border-white/10 text-slate-400 hover:text-white hover:bg-white/[0.06] transition-all"
+              className="rounded-full border border-white/10 p-2 text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-white"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
-        <div className="mb-8">
-          <p className="text-[10px] font-bold text-sky-300 uppercase tracking-[0.3em] mb-3">Your journeys</p>
-          <h2 className="text-3xl sm:text-4xl font-bold text-white leading-tight">
+      <main className="mx-auto max-w-wide px-4 py-10 sm:px-6 sm:py-14">
+        <div className="mb-9 max-w-2xl">
+          <p className="eyebrow mb-3">Your journeys</p>
+          <h2 className="text-[clamp(1.8rem,4vw,2.75rem)] font-semibold leading-[1.08] tracking-[-0.03em] text-white">
             {user?.display_name ? `${user.display_name.split(' ')[0]}, your` : 'Your'} saved itineraries
           </h2>
-          <p className="text-sm text-slate-400 font-light mt-2">
+          <p className="mt-3 text-[14px] leading-relaxed text-slate-400">
             Every plan the agents generated while you were signed in lives here. Open one to pick up exactly where you left off.
           </p>
         </div>
 
         {!loading && trips && trips.length > 0 && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <div className="mb-9 grid grid-cols-2 gap-3 md:grid-cols-4">
             {[
               { label: 'Trips saved', value: trips.length, Icon: Compass },
               { label: 'Destinations', value: destinations.size, Icon: MapPin },
               { label: 'Days planned', value: totalDays, Icon: CalendarDays },
               { label: 'Latest', value: formatSavedOn(trips[0].created_at) || '—', Icon: Wallet, small: true },
             ].map((s) => (
-              <div key={s.label} className="bg-[#0c0e12]/70 border border-white/10 rounded-2xl p-4">
-                <p className="text-[9px] uppercase tracking-[0.25em] text-slate-500 mb-2 flex items-center gap-1.5">
-                  <s.Icon className="w-3 h-3 text-sky-300" />
+              <div key={s.label} className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+                <p className="mb-2 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.12em] text-slate-500">
+                  <s.Icon className="h-3 w-3 text-sky-300" />
                   {s.label}
                 </p>
-                <p className={`font-bold text-white ${s.small ? 'text-base' : 'text-3xl'}`}>{s.value}</p>
+                <p className={`font-semibold text-white ${s.small ? 'text-[15px]' : 'text-[26px] tracking-tight'}`}>{s.value}</p>
               </div>
             ))}
           </div>
@@ -212,30 +209,30 @@ export default function Dashboard() {
         )}
 
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-20 text-slate-500">
-            <Loader2 className="w-5 h-5 animate-spin" />
-            <span className="text-[10px] font-bold uppercase tracking-[0.3em]">Loading your trips</span>
+          <div className="flex items-center justify-center gap-2.5 py-24 text-slate-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-[11px]">Loading your trips…</span>
           </div>
         ) : !trips || trips.length === 0 ? (
           <div className="flat-card p-10 text-center">
-            <div className="mx-auto w-14 h-14 rounded-2xl border border-sky-400/20 bg-sky-400/10 flex items-center justify-center text-sky-300 mb-5">
-              <Compass className="w-7 h-7" />
+            <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-sky-300">
+              <Compass className="h-6 w-6" />
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">No saved trips yet</h3>
-            <p className="text-sm text-slate-400 font-light max-w-md mx-auto mb-6">
+            <h3 className="mb-2 text-[19px] font-semibold text-white">No saved trips yet</h3>
+            <p className="mx-auto mb-6 max-w-md text-[13.5px] leading-relaxed text-slate-400">
               Plan your first journey and it will be archived here automatically — day-by-day schedule, costs,
               transport and local insights included.
             </p>
             <button
               onClick={() => navigate('/app')}
-              className="btn-accent px-8 py-3.5 rounded-xl font-bold text-sm tracking-[0.12em] inline-flex items-center gap-2"
+              className="btn-accent inline-flex items-center gap-2 rounded-full px-6 py-3 text-[13px] font-medium"
             >
-              <Plus className="w-4 h-4" />
-              PLAN YOUR FIRST TRIP
+              <Plus className="h-4 w-4" />
+              Plan your first trip
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 lg:grid-cols-3">
             {trips.map((trip, i) => (
               <TripCard
                 key={trip.id}

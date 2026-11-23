@@ -207,11 +207,11 @@ export default function AskPlace() {
       {/* Header area with inputs */}
       <div className="shrink-0 px-6 md:px-8 pt-6 md:pt-8 pb-6 border-b border-white/5">
         <div className="flex items-center gap-3 mb-6">
-          <div className="bg-gradient-to-br from-sky-400/25 via-sky-400/15 to-sky-400/20 p-2.5 rounded-xl border border-sky-400/10 shadow-[0_0_20px_rgba(56,189,248,0.15)]">
-            <Search className="w-5 h-5 text-sky-300 drop-shadow-[0_0_8px_rgba(56,189,248,0.4)]" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04]">
+            <Search className="h-4 w-4 text-sky-300" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-white tracking-tight">Ask XPLORA</h2>
+            <h2 className="text-[16px] font-medium tracking-tight text-white">Ask XPLORA</h2>
             <p className="text-[10px] text-slate-500 italic tracking-wider">Place-Specific Q&amp;A with Web Research</p>
           </div>
         </div>
@@ -237,7 +237,7 @@ export default function AskPlace() {
                   }}
                   placeholder="e.g. Fushimi Inari, Kyoto"
                   maxLength={120}
-                  className={`w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-10 pr-4 text-sm focus:border-sky-400/50 focus:bg-sky-400/[0.06] focus:shadow-[0_0_20px_rgba(56,189,248,0.06)] transition-all duration-300 outline-none ${fieldErrors.place ? 'border-red-500/60 focus:border-red-500/80' : ''}`}
+                  className={`field w-full py-3 pl-9 pr-3 text-[13px] outline-none ${fieldErrors.place ? 'border-red-500/60' : ''}`}
                 />
               </div>
               {fieldErrors.place && <InlineError message={fieldErrors.place} />}
@@ -256,7 +256,7 @@ export default function AskPlace() {
                   }}
                   placeholder="e.g. Best time to visit? Is it crowded?"
                   maxLength={500}
-                  className={`w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-10 pr-4 text-sm focus:border-sky-400/50 focus:bg-sky-400/[0.06] focus:shadow-[0_0_20px_rgba(56,189,248,0.06)] transition-all duration-300 outline-none ${fieldErrors.question ? 'border-red-500/60 focus:border-red-500/80' : ''}`}
+                  className={`field w-full py-3 pl-9 pr-3 text-[13px] outline-none ${fieldErrors.question ? 'border-red-500/60' : ''}`}
                 />
               </div>
               {fieldErrors.question && <InlineError message={fieldErrors.question} />}
@@ -267,10 +267,10 @@ export default function AskPlace() {
             <button
               type="submit"
               disabled={isLoading || !place.trim() || question.trim().length < 3}
-              className="text-white font-bold py-3 px-6 rounded-xl shadow-[0_5px_25px_rgba(56,189,248,0.3)] hover:shadow-[0_8px_40px_rgba(56,189,248,0.5)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 disabled:opacity-50 disabled:translate-y-0 flex items-center justify-center gap-2 tracking-[0.12em] text-xs relative overflow-hidden group/btn"
+              className="btn-accent flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-[12px] font-medium disabled:translate-y-0 disabled:opacity-50"
               style={{ background: 'linear-gradient(135deg, #38bdf8 0%, #0284c7 25%, #38bdf8 65%, #0284c7 100%)' }}
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent opacity-0 group-hover/btn:opacity-100 transition-opacity duration-700 -skew-x-12 translate-x-[-100%] group-hover/btn:translate-x-[100%] duration-1000"></div>
+
               {isLoading ? (
                 <>
                   <Search className="w-4 h-4 animate-pulse text-white/70" />
@@ -373,7 +373,7 @@ export default function AskPlace() {
                 {/* Sources */}
                 {result.sources.length > 0 && (
                   <div className="flat-card p-5">
-                    <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                    <h3 className="mb-3 flex items-center gap-2 text-[13px] font-medium text-white">
                       <Globe className="w-4 h-4 text-sky-300" />
                       Sources
                     </h3>
@@ -403,7 +403,7 @@ export default function AskPlace() {
                 {/* Follow-up suggestions */}
                 {result.followup_suggestions.length > 0 && (
                   <div className="space-y-3">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                    <p className="flex items-center gap-2 text-[10px] uppercase tracking-[0.12em] text-slate-500">
                       <Sparkles className="w-3 h-3" />
                       Suggested Follow-ups
                     </p>
@@ -412,7 +412,7 @@ export default function AskPlace() {
                         <button
                           key={i}
                           onClick={() => handleSuggestionClick(s)}
-                          className="px-3 py-2 rounded-xl text-xs font-medium bg-white/5 border border-white/10 text-slate-300 hover:bg-sky-400/10 hover:border-sky-400/30 hover:text-white transition-all duration-300 flex items-center gap-1.5"
+                          className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium text-slate-300 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
                         >
                           <ChevronRight className="w-3 h-3 text-sky-300" />
                           {s}
@@ -431,13 +431,13 @@ export default function AskPlace() {
                       onChange={(e) => setFollowupInput(e.target.value)}
                       onKeyDown={handleFollowupKeyDown}
                       placeholder="Ask a follow-up question..."
-                      className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-4 pr-4 text-sm focus:border-sky-400/50 focus:bg-sky-400/[0.06] transition-all duration-300 outline-none"
+                      className="field w-full py-3 pl-3 pr-3 text-[13px] outline-none"
                     />
                   </div>
                   <button
                     type="submit"
                     disabled={!followupInput.trim() || followupInput.trim().length < 3}
-                    className="bg-gradient-to-r from-sky-400/80 to-sky-400/80 text-white font-bold py-3 px-5 rounded-xl hover:shadow-[0_5px_25px_rgba(56,189,248,0.3)] transition-all duration-300 disabled:opacity-50 text-xs flex items-center gap-1.5"
+                    className="btn-accent flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[12px] font-medium disabled:opacity-50"
                   >
                     <ArrowRight className="w-4 h-4" />
                   </button>
@@ -448,7 +448,7 @@ export default function AskPlace() {
               <div className="space-y-4">
                 {/* Location Card */}
                 <div className="flat-card p-5 space-y-4">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <h3 className="flex items-center gap-2 text-[13px] font-medium text-white">
                     <MapPin className="w-4 h-4 text-sky-300" />
                     Location Details
                   </h3>
@@ -476,7 +476,7 @@ export default function AskPlace() {
                         href={result.location.google_maps_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 hover:bg-sky-400/10 hover:border-sky-400/30 hover:text-white transition-all duration-300"
+                        className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] text-slate-300 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
                       >
                         <Globe className="w-3.5 h-3.5 text-sky-300" />
                         View on Google Maps
@@ -488,7 +488,7 @@ export default function AskPlace() {
                         href={result.location.directions_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 hover:bg-sky-400/10 hover:border-sky-400/30 hover:text-white transition-all duration-300"
+                        className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] text-slate-300 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
                       >
                         <Navigation className="w-3.5 h-3.5 text-sky-300" />
                         Get Directions
@@ -515,7 +515,7 @@ export default function AskPlace() {
                 {/* Facts */}
                 {result.facts.length > 0 && (
                   <div className="flat-card p-5 space-y-3">
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <h3 className="flex items-center gap-2 text-[13px] font-medium text-white">
                       <Sparkles className="w-4 h-4 text-sky-300" />
                       Key Facts
                     </h3>
@@ -541,10 +541,10 @@ export default function AskPlace() {
               animate={{ opacity: 1 }}
               className="flex flex-col items-center justify-center py-20 text-center"
             >
-              <div className="bg-gradient-to-br from-sky-400/15 via-sky-400/5 to-sky-400/10 p-8 rounded-3xl border border-sky-400/10 mb-6">
-                <Search className="w-12 h-12 text-sky-300 drop-shadow-[0_0_12px_rgba(56,189,248,0.3)]" />
+              <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
+                <Search className="h-6 w-6 text-sky-300" />
               </div>
-              <h3 className="text-2xl font-bold text-white mb-2">Ask About Any Place</h3>
+              <h3 className="mb-2 text-[22px] font-semibold tracking-tight text-white">Ask about any place</h3>
               <p className="text-slate-400 text-sm max-w-md">
                 Enter a place and your question above. XPLORA will research the web and give you
                 a comprehensive answer with sources, location details, and helpful facts.

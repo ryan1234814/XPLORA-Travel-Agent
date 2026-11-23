@@ -95,7 +95,7 @@ export function PlaceEnrichment({ query, offset = 0 }: { query: string; offset?:
                   <span className="text-[11px] font-bold text-white">{r.author_name}</span>
                   <span className="flex">
                     {Array.from({ length: 5 }).map((_, k) => (
-                      <Star key={k} className={`w-2.5 h-2.5 ${k < (r.rating || 0) ? 'fill-sky-400 text-sky-300' : 'text-white/20'}`} />
+                      <Star key={k} className={`w-2.5 h-2.5 ${k < (r.rating || 0) ? 'fill-sky-400 text-sky-300' : 'text-slate-700'}`} />
                     ))}
                   </span>
                   <span className="text-[10px] text-slate-500 ml-auto">{r.time}</span>

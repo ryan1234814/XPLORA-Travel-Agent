@@ -1,15 +1,32 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ===== XPLORA — Apple × Google Developers design tokens =====
+   Surfaces are near-black and quiet (Apple). One blue accent carries every
+   interactive affordance (Google Developers). Hairlines replace heavy borders,
+   and type does the hierarchy work. */
+
 :root {
-  --accent: #38bdf8;
-  --accent-dark: #0284c7;
-  --bg-deep: #05070a;
-  --bg-surface: #0c0e12;
-  --bg-card: #14171c;
+  --accent: #1a73e8;
+  --accent-light: #8ab4f8;
+  --accent-dark: #174ea6;
+
+  --bg-deep: #000000;
+  --bg-base: #0a0a0b;
+  --bg-card: #161617;
+  --bg-raised: #1d1d1f;
+
+  --hairline: rgba(255, 255, 255, 0.10);
+  --hairline-soft: rgba(255, 255, 255, 0.06);
+
+  --text-primary: #f5f5f7;
+  --text-secondary: #a1a1a6;
+  --text-tertiary: #86868b;
+
+  --nav-h: 48px;
 }
 
 * {
@@ -20,6 +37,7 @@
 
 html {
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -27,99 +45,99 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--bg-deep);
-  color: #e2e8f0;
-  font-family: 'Outfit', sans-serif;
-  line-height: 1.6;
+  color: var(--text-primary);
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', sans-serif;
+  font-size: 17px;
+  line-height: 1.47;
+  letter-spacing: -0.011em;
   overflow-x: hidden;
 }
 
-/* Page background — flat deep neutral, no drifting orbs */
+h1, h2, h3, h4 {
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
+  letter-spacing: -0.028em;
+  line-height: 1.06;
+}
+
+/* Page background — Apple's pure-black stage with one very soft blue bloom
+   at the top. No drifting orbs, no colour noise. */
 .main-gradient {
   position: relative;
   background:
-    radial-gradient(ellipse 90% 60% at 50% 0%, #0d1117 0%, transparent 70%),
-    linear-gradient(180deg, #07090d 0%, #05070a 100%);
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(26, 115, 232, 0.10) 0%, transparent 70%),
+    var(--bg-deep);
   min-height: 100vh;
 }
 
-/* Custom Scrollbar - quiet neutral with accent on hover */
+/* Quiet Apple-style scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
-
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 3px;
-  transition: background 0.2s;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(56, 189, 248, 0.4);
+  background: rgba(255, 255, 255, 0.26);
+  background-clip: content-box;
 }
 
-/* Custom scrollbar for modals */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 4px;
+  width: 5px;
 }
-
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(56, 189, 248, 0.25);
-  border-radius: 2px;
+  background: rgba(138, 180, 248, 0.3);
+  border-radius: 999px;
 }
 
-/* Animations */
+/* ===== Motion ===== */
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(16px); }
+  from { opacity: 0; transform: translateY(24px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 .animate-fade-in {
-  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeInUp 0.8s cubic-bezier(0.28, 0.11, 0.32, 1) forwards;
 }
 
 @keyframes fadeInScale {
-  from { opacity: 0; transform: scale(0.96); }
+  from { opacity: 0; transform: scale(0.97); }
   to { opacity: 1; transform: scale(1); }
 }
-
 .animate-scale-in {
-  animation: fadeInScale 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeInScale 0.6s cubic-bezier(0.28, 0.11, 0.32, 1) forwards;
 }
 
 @keyframes float {
   0%, 100% { transform: translateY(0px); }
   50% { transform: translateY(-6px); }
 }
-
 .animate-float {
-  animation: float 6s ease-in-out infinite;
+  animation: float 7s ease-in-out infinite;
 }
 
 @keyframes pulse-soft {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.8; }
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.75; }
 }
-
 .animate-pulse-soft {
-  animation: pulse-soft 3s ease-in-out infinite;
+  animation: pulse-soft 4s ease-in-out infinite;
 }
 
-/* Slow spin for loading states */
 @keyframes spin-slow {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
-
 .animate-spin-slow {
   animation: spin-slow 3s linear infinite;
 }
 
-/* Hide scrollbar utility */
+/* ===== Utilities ===== */
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -128,44 +146,61 @@ body {
   display: none;
 }
 
-/* Selection color */
 ::selection {
-  background: rgba(56, 189, 248, 0.3);
-  color: white;
+  background: rgba(26, 115, 232, 0.45);
+  color: #ffffff;
 }
 
-/* Focus ring */
 *:focus-visible {
-  outline: 2px solid rgba(56, 189, 248, 0.4);
-  outline-offset: 2px;
+  outline: 2px solid var(--accent-light);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
-/* Link styles */
 a {
   color: inherit;
   text-decoration: none;
 }
 
-/* Infinite destination marquee (pauses on hover) */
+/* Infinite destination marquee */
 @keyframes marquee {
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
 }
-
 .animate-marquee {
-  animation: marquee 32s linear infinite;
+  animation: marquee 40s linear infinite;
 }
-
 .animate-marquee:hover {
   animation-play-state: paused;
 }
 
 .marquee-mask {
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
 }
 
-/* Legibility over imagery: shadows the text itself, never masks the background */
+/* Legibility over imagery */
 .text-on-image {
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75), 0 2px 16px rgba(0, 0, 0, 0.55);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75), 0 2px 20px rgba(0, 0, 0, 0.55);
+}
+
+/* Apple-style hairline divider that fades at both ends */
+.hairline-x {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.12) 18%,
+    rgba(255, 255, 255, 0.12) 82%,
+    transparent
+  );
+}
+
+/* Small caps utility label (Google Developers eyebrows) */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent-light);
 }
